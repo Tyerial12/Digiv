@@ -1544,7 +1544,7 @@ private fun SystemFullResetCard(
                 )
             }
             Text(
-                text = "Wipe all partners, evolution stages, training logs, and rankings to re-draft 1 fresh starter monster with 60 DigiCoins.",
+                text = "Wipe all partners, evolution stages, training logs, and rankings to start a New Game with 1 fresh Rookie starter monster and 200 DigiCoins (New Game only).",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

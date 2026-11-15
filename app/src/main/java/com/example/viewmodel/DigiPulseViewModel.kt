@@ -586,12 +586,17 @@ class DigiPulseViewModel(
     )
 
     init {
-        val savedCoins = repository.loadDigiCoins(currentUserId)
+        val savedLocalCreatures = repository.loadLocalCreatures(currentUserId)
+        val isNewGame = savedLocalCreatures.isEmpty() && !repository.hasStartedGame(currentUserId)
+        val savedCoins = if (isNewGame) {
+            DigimonCatalog.STARTING_DIGI_COINS
+        } else {
+            repository.loadDigiCoins(currentUserId)
+        }
         val savedBerries = repository.loadTammingBerryCount(currentUserId)
         val (savedStdParts, savedUltraParts) = repository.loadMonsterPartsCounts(currentUserId)
         val savedFood = repository.loadFoodInventory(currentUserId)
         val (savedDailyDate, savedDailySummary) = repository.loadDailyLoginState(currentUserId)
-        val savedLocalCreatures = repository.loadLocalCreatures(currentUserId)
         _digiCoins.value = savedCoins
         _tammingBerryCount.value = savedBerries
         _standardMonsterPartsCount.value = savedStdParts
@@ -600,6 +605,7 @@ class DigiPulseViewModel(
         _lastClaimedDailyLoginDateKey.value = savedDailyDate
         _lastDailyLoginRewardSummary.value = savedDailySummary
         if (savedLocalCreatures.isNotEmpty()) {
+            repository.markGameStarted(currentUserId, true)
             _optimisticCreatures.value = savedLocalCreatures
         }
 
@@ -793,14 +799,18 @@ class DigiPulseViewModel(
 
         val lead = draftedCreatures.first()
         val namesSummary = "${lead.nickname} (${lead.speciesName})"
+        val isNewGameDraft = !repository.hasStartedGame(currentUserId) || _optimisticCreatures.value.isEmpty()
 
         _isResetting.value = false
         _removedCreatureIds.value = emptySet()
         _optimisticCreatures.value = draftedCreatures
         repository.saveLocalCreatures(currentUserId, draftedCreatures)
+        repository.markGameStarted(currentUserId, true)
         _selectedCreatureId.value = lead.id
-        _digiCoins.value = DigimonCatalog.STARTING_DIGI_COINS
-        repository.saveDigiCoins(currentUserId, DigimonCatalog.STARTING_DIGI_COINS)
+        if (isNewGameDraft) {
+            _digiCoins.value = DigimonCatalog.STARTING_DIGI_COINS
+            repository.saveDigiCoins(currentUserId, DigimonCatalog.STARTING_DIGI_COINS)
+        }
         _nextDigiCoinTickSec.value = DigimonCatalog.DIGI_COIN_INTERVAL_SEC
         prependOptimisticLog(
             TrainingLogEntry(
@@ -810,7 +820,11 @@ class DigiPulseViewModel(
                 creatureName = lead.nickname,
                 activityType = "Digivolution",
                 grade = "EVO",
-                statDeltaSummary = "Drafted Starter Monster: $namesSummary • 60 DigiCoins Initialized",
+                statDeltaSummary = if (isNewGameDraft) {
+                    "New Game Started: $namesSummary • ${DigimonCatalog.STARTING_DIGI_COINS} DigiCoins Initialized"
+                } else {
+                    "Drafted Starter Monster: $namesSummary • Balance ${_digiCoins.value} DigiCoins Kept"
+                },
                 xpGained = 50,
                 dateKey = todayKey,
                 createdAt = nowTimestamp
@@ -823,15 +837,18 @@ class DigiPulseViewModel(
                 creatureId = lead.id,
                 creatureName = lead.nickname,
                 severity = "INFO",
-                title = "Starter Monster Synchronized!",
-                message = "Raise $namesSummary via Training Drills (10 DigiCoins/drill, +5 Coins every 5m). Monsters level ONLY with training and require LVL 20+ to evolve!",
+                title = "New Game Starter Synchronized!",
+                message = "You start your New Game with ${DigimonCatalog.STARTING_DIGI_COINS} DigiCoins! Raise $namesSummary via Training Drills (10 DigiCoins/drill, +5 Coins every 5m, or 100 DigiCoins for 24h Offline Training).",
                 isRead = false,
                 createdAt = nowTimestamp,
                 updatedAt = nowTimestamp
             )
         )
-        _statusBannerMessage.value =
-            "Starter Monster $namesSummary synchronized! You have 60 DigiCoins (+5 every 5m). Each training costs 10 DigiCoins and monsters level ONLY with training (reach LVL 20 to evolve)!"
+        _statusBannerMessage.value = if (isNewGameDraft) {
+            "New Game started with Rookie $namesSummary and ${DigimonCatalog.STARTING_DIGI_COINS} DigiCoins (+5 every 5m)! Train (10 Coins/drill or 100 Coins for 24h offline) to reach LVL 20 and evolve!"
+        } else {
+            "Starter Monster $namesSummary synchronized! Current balance: ${_digiCoins.value} DigiCoins (200 DigiCoins awarded on New Game only)."
+        }
 
         if (isGoogleSignedIn) {
             viewModelScope.launch {
@@ -868,7 +885,7 @@ class DigiPulseViewModel(
         alertedHealthLowIds.clear()
         offlineCatchUpAppliedIds.clear()
         _statusBannerMessage.value =
-            "Full reset complete! You have 60 DigiCoins ready. Choose your 1 Starter Monster below."
+            "New Game initialized! You start with ${DigimonCatalog.STARTING_DIGI_COINS} DigiCoins (New Game only). Choose your 1 Rookie Starter Monster below."
 
         if (isGoogleSignedIn) {
             viewModelScope.launch {

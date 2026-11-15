@@ -716,7 +716,7 @@ enum class DigiRation(
 object DigimonCatalog {
 
     const val MAX_SQUAD_SIZE = 4
-    const val STARTING_DIGI_COINS = 60
+    const val STARTING_DIGI_COINS = 200 // Awarded on New Game only
     const val TRAINING_DRILL_COIN_COST = 10
     const val OFFLINE_TRAINING_24H_COIN_COST = 100
     const val OFFLINE_TRAINING_24H_DURATION_MS = 24L * 60L * 60L * 1000L

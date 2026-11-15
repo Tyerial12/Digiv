@@ -1232,7 +1232,7 @@ fun AuthenticatedHoloDashboard(
             },
             text = {
                 Text(
-                    text = "Are you sure you want to reset? This will permanently wipe your raised Digimon, evolution progress, daily training logs, notifications, and global leaderboard stats, returning you to the 1-Starter Monster selection screen with 60 DigiCoins. This action cannot be undone.",
+                    text = "Are you sure you want to start a New Game? This will permanently wipe your raised Digimon, evolution progress, daily training logs, notifications, and global leaderboard stats, returning you to the 1-Starter Rookie selection screen with 200 DigiCoins (New Game only). This action cannot be undone.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = Color.White
                 )

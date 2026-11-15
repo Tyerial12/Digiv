@@ -959,7 +959,7 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                     creatureName = lead.nickname,
                     activityType = "Digivolution",
                     grade = "EVO",
-                    statDeltaSummary = "Drafted Starter Monster: $namesSummary • 60 DigiCoins Initialized",
+                    statDeltaSummary = "Drafted Starter Monster: $namesSummary • 200 DigiCoins Initialized (New Game)",
                     xpGained = 50,
                     dateKey = todayKey
                 )
@@ -1224,8 +1224,20 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
 
     private fun prefs() = appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
+    fun hasStartedGame(userId: String): Boolean {
+        val p = prefs() ?: return false
+        return p.getBoolean("started_game_$userId", false)
+    }
+
+    fun markGameStarted(userId: String, started: Boolean) {
+        prefs()?.edit()?.putBoolean("started_game_$userId", started)?.apply()
+    }
+
     fun loadDigiCoins(userId: String): Int {
         val p = prefs() ?: return DigimonCatalog.STARTING_DIGI_COINS
+        if (!hasStartedGame(userId) && loadLocalCreatures(userId).isEmpty()) {
+            return DigimonCatalog.STARTING_DIGI_COINS
+        }
         return p.getInt("coins_$userId", DigimonCatalog.STARTING_DIGI_COINS).coerceAtLeast(0)
     }
 
@@ -1396,6 +1408,7 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
     fun clearLocalUserProgress(userId: String) {
         val p = prefs() ?: return
         p.edit()
+            .remove("started_game_$userId")
             .remove("coins_$userId")
             .remove("berries_$userId")
             .remove("parts_std_$userId")

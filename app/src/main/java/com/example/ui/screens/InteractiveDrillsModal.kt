@@ -1068,7 +1068,7 @@ fun StarterTrioDraftContent(
                             color = HoloCyanPrimary
                         )
                         Text(
-                            text = "ROOKIE STAGE ONLY • NON-ROOKIE STAGES LOCKED",
+                            text = "ROOKIE STAGE ONLY • 200 DIGICOINS (NEW GAME ONLY)",
                             style = MaterialTheme.typography.labelSmall,
                             color = BioEmeraldHealth
                         )
@@ -1094,7 +1094,7 @@ fun StarterTrioDraftContent(
                     }
                 }
                 Text(
-                    text = "Starter Rule: You can ONLY choose a Rookie-stage monster as your starter! Champion, Ultimate & Mega monsters cannot be picked as starters and must be unlocked by training to LVL 20+.",
+                    text = "New Game Rule: You start with 200 DigiCoins on a New Game only, and can ONLY choose a Rookie-stage monster as your starter! Higher stages unlock at LVL 20+.",
                     style = MaterialTheme.typography.bodySmall,
                     color = EvolutionGoldSecondary
                 )
@@ -1272,7 +1272,7 @@ fun StarterTrioDraftContent(
                 .testTag("confirm_three_starters_button")
         ) {
             Text(
-                text = "START WITH ROOKIE ${chosenSpec.speciesName.uppercase()} & 60 DIGICOINS ➔",
+                text = "START NEW GAME WITH ROOKIE ${chosenSpec.speciesName.uppercase()} & 200 DIGICOINS ➔",
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center
             )
