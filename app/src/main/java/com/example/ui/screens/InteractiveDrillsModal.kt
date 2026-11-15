@@ -82,6 +82,7 @@ import com.example.ui.theme.HoloCyanPrimary
 import com.example.ui.theme.HoloSlateSurface
 import com.example.ui.theme.PlasmaVioletStamina
 import com.example.ui.theme.SolarCoralHunger
+import com.example.ui.theme.VirusCrimsonError
 import kotlin.math.abs
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -1010,23 +1011,31 @@ fun StarterTrioDraftContent(
     onConfirmDraft: (List<com.example.data.model.StarterDraftChoice>) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var selectedSpeciesId by remember { mutableStateOf("agumon") }
+    val rookieStarterSpecs = remember {
+        DigimonCatalog.starterSpecs.filter { it.stage == "Rookie" && !it.isRareLevel100Spec }
+    }
+    var selectedSpeciesId by remember {
+        mutableStateOf(rookieStarterSpecs.firstOrNull()?.speciesId ?: "agumon")
+    }
     var customNickname by remember { mutableStateOf("") }
+    var stageLockNotice by remember { mutableStateOf<String?>(null) }
+
+    val chosenSpec = DigimonCatalog.requireRookieStarterSpec(selectedSpeciesId)
 
     val submitDraft: () -> Unit = {
-        if (selectedSpeciesId.isNotBlank()) {
+        if (chosenSpec.stage == "Rookie" && !chosenSpec.isRareLevel100Spec) {
             onConfirmDraft(
                 listOf(
                     com.example.data.model.StarterDraftChoice(
-                        speciesId = selectedSpeciesId,
+                        speciesId = chosenSpec.speciesId,
                         customNickname = customNickname
                     )
                 )
             )
+        } else {
+            stageLockNotice = "Only a Rookie-stage monster can be chosen as your starter monster!"
         }
     }
-
-    val chosenSpec = DigimonCatalog.getSpec(selectedSpeciesId)
 
     Column(
         modifier = modifier
@@ -1052,16 +1061,22 @@ fun StarterTrioDraftContent(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "CHOOSE YOUR 1 STARTER MONSTER",
-                        style = MaterialTheme.typography.headlineMedium,
-                        color = HoloCyanPrimary,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "CHOOSE 1 ROOKIE STARTER MONSTER",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = HoloCyanPrimary
+                        )
+                        Text(
+                            text = "ROOKIE STAGE ONLY • NON-ROOKIE STAGES LOCKED",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = BioEmeraldHealth
+                        )
+                    }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = submitDraft,
-                        enabled = selectedSpeciesId.isNotBlank(),
+                        enabled = chosenSpec.stage == "Rookie",
                         colors = ButtonDefaults.buttonColors(
                             containerColor = HoloCyanPrimary,
                             contentColor = CyberVoidBg
@@ -1079,29 +1094,92 @@ fun StarterTrioDraftContent(
                     }
                 }
                 Text(
-                    text = "Start with 1 Monster & 60 DigiCoins (+5 every 5m). Each training costs 10 DigiCoins, monsters level ONLY with training, and evolve at LVL 20+!",
+                    text = "Starter Rule: You can ONLY choose a Rookie-stage monster as your starter! Champion, Ultimate & Mega monsters cannot be picked as starters and must be unlocked by training to LVL 20+.",
                     style = MaterialTheme.typography.bodySmall,
                     color = EvolutionGoldSecondary
                 )
+
+                // Stage Gate Indicator Strip showing Rookie Allowed vs Locked Higher Stages
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        color = BioEmeraldHealth.copy(alpha = 0.22f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, BioEmeraldHealth),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { stageLockNotice = null }
+                    ) {
+                        Text(
+                            text = "✓ ROOKIE",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = BioEmeraldHealth,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(vertical = 5.dp, horizontal = 4.dp)
+                        )
+                    }
+                    listOf("CHAMPION", "ULTIMATE", "MEGA").forEach { lockedStage ->
+                        Surface(
+                            color = VirusCrimsonError.copy(alpha = 0.14f),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, VirusCrimsonError.copy(alpha = 0.55f)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    stageLockNotice =
+                                        "LOCKED: You can ONLY choose a Rookie monster for your starter! $lockedStage monsters must be evolved from a Rookie."
+                                }
+                        ) {
+                            Text(
+                                text = "🔒 $lockedStage",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = VirusCrimsonError,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                modifier = Modifier.padding(vertical = 5.dp, horizontal = 2.dp)
+                            )
+                        }
+                    }
+                }
+
+                if (stageLockNotice != null) {
+                    Surface(
+                        color = VirusCrimsonError.copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, VirusCrimsonError)
+                    ) {
+                        Text(
+                            text = stageLockNotice.orEmpty(),
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White,
+                            modifier = Modifier.padding(8.dp)
+                        )
+                    }
+                }
             }
         }
 
-        // Scrollable Starter Cards & Nickname
+        // Scrollable Rookie Starter Cards & Nickname
         Column(
             modifier = Modifier
                 .weight(1f, fill = false)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            DigimonCatalog.starterSpecs.forEach { spec ->
-                val isSelected = spec.speciesId == selectedSpeciesId
+            rookieStarterSpecs.forEach { spec ->
+                val isSelected = spec.speciesId == chosenSpec.speciesId
                 val accent = Color(spec.primaryColorHex)
 
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            selectedSpeciesId = spec.speciesId
+                            if (spec.stage == "Rookie" && !spec.isRareLevel100Spec) {
+                                selectedSpeciesId = spec.speciesId
+                                stageLockNotice = null
+                            }
                         }
                         .testTag("starter_draft_card_${spec.speciesId}"),
                     shape = RoundedCornerShape(16.dp),
@@ -1120,7 +1198,7 @@ fun StarterTrioDraftContent(
                     ) {
                         DigimonHoloCrestAvatar(
                             speciesId = spec.speciesId,
-                            stage = spec.stage,
+                            stage = "Rookie",
                             isResting = false,
                             evolutionReady = isSelected,
                             sizeDp = 46.dp
@@ -1132,27 +1210,25 @@ fun StarterTrioDraftContent(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "${spec.speciesName} (${spec.attribute})",
+                                    text = "${spec.speciesName} — ROOKIE (LVL 1)",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = Color.White,
                                     modifier = Modifier.weight(1f)
                                 )
-                                if (isSelected) {
-                                    Surface(
-                                        color = accent,
-                                        shape = RoundedCornerShape(50)
-                                    ) {
-                                        Text(
-                                            text = "SELECTED",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = CyberVoidBg,
-                                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                                        )
-                                    }
+                                Surface(
+                                    color = if (isSelected) accent else BioEmeraldHealth.copy(alpha = 0.18f),
+                                    shape = RoundedCornerShape(50)
+                                ) {
+                                    Text(
+                                        text = if (isSelected) "SELECTED ROOKIE" else "ROOKIE ONLY",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (isSelected) CyberVoidBg else BioEmeraldHealth,
+                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
+                                    )
                                 }
                             }
                             Text(
-                                text = "Lineage: ${spec.speciesName} (LVL 20+) ➔ ${spec.apexTargetName} [Mega]",
+                                text = "Stage: Rookie • Attribute: ${spec.attribute} • Move: ${spec.signatureMove}",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = EvolutionGoldSecondary
                             )
@@ -1167,7 +1243,7 @@ fun StarterTrioDraftContent(
             }
 
             Text(
-                text = "OPTIONAL NICKNAME FOR YOUR STARTER (${chosenSpec.speciesName.uppercase()})",
+                text = "OPTIONAL NICKNAME FOR YOUR ROOKIE STARTER (${chosenSpec.speciesName.uppercase()})",
                 style = MaterialTheme.typography.labelLarge,
                 color = HoloCyanPrimary
             )
@@ -1183,7 +1259,7 @@ fun StarterTrioDraftContent(
         // Always-Visible Sticky Bottom Continue Button
         Button(
             onClick = submitDraft,
-            enabled = selectedSpeciesId.isNotBlank(),
+            enabled = chosenSpec.stage == "Rookie",
             colors = ButtonDefaults.buttonColors(
                 containerColor = HoloCyanPrimary,
                 contentColor = CyberVoidBg
@@ -1196,7 +1272,7 @@ fun StarterTrioDraftContent(
                 .testTag("confirm_three_starters_button")
         ) {
             Text(
-                text = "START WITH ${chosenSpec.speciesName.uppercase()} & 60 DIGICOINS ➔",
+                text = "START WITH ROOKIE ${chosenSpec.speciesName.uppercase()} & 60 DIGICOINS ➔",
                 style = MaterialTheme.typography.titleMedium,
                 textAlign = TextAlign.Center
             )
@@ -1230,6 +1306,9 @@ fun HatchDigiEggBottomSheet(
     onHatch: (String, String) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val rookieSpecs = remember {
+        DigimonCatalog.starterSpecs.filter { it.stage == "Rookie" && !it.isRareLevel100Spec }
+    }
     var selectedSpeciesId by remember { mutableStateOf("guilmon") }
     var customNickname by remember { mutableStateOf("") }
 
@@ -1246,7 +1325,7 @@ fun HatchDigiEggBottomSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "HATCH NEW DIGI-EGG PARTNER",
+                text = "HATCH NEW ROOKIE DIGI-EGG PARTNER",
                 style = MaterialTheme.typography.headlineLarge,
                 color = HoloCyanPrimary
             )
@@ -1261,7 +1340,7 @@ fun HatchDigiEggBottomSheet(
                     .testTag("hatch_nickname_input")
             )
 
-            DigimonCatalog.starterSpecs.forEach { spec ->
+            rookieSpecs.forEach { spec ->
                 val isSelected = spec.speciesId == selectedSpeciesId
                 val accent = Color(spec.primaryColorHex)
                 Card(
@@ -1281,14 +1360,14 @@ fun HatchDigiEggBottomSheet(
                     ) {
                         DigimonHoloCrestAvatar(
                             speciesId = spec.speciesId,
-                            stage = spec.stage,
+                            stage = "Rookie",
                             isResting = false,
                             evolutionReady = false,
                             sizeDp = 46.dp
                         )
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = "${spec.speciesName} (${spec.attribute}) ➔ Apex: ${spec.apexTargetName}",
+                                text = "${spec.speciesName} (${spec.attribute} • Rookie) ➔ Apex: ${spec.apexTargetName}",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = Color.White
                             )
@@ -1304,7 +1383,8 @@ fun HatchDigiEggBottomSheet(
 
             Button(
                 onClick = {
-                    onHatch(selectedSpeciesId, customNickname)
+                    val safeRookie = DigimonCatalog.requireRookieStarterSpec(selectedSpeciesId)
+                    onHatch(safeRookie.speciesId, customNickname)
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(
@@ -1319,7 +1399,7 @@ fun HatchDigiEggBottomSheet(
                     .testTag("confirm_hatch_button")
             ) {
                 Text(
-                    text = "HATCH & SYNCHRONIZE PARTNER",
+                    text = "HATCH & SYNCHRONIZE ROOKIE PARTNER",
                     style = MaterialTheme.typography.titleMedium,
                     textAlign = TextAlign.Center
                 )

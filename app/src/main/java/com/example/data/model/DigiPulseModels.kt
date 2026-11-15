@@ -364,6 +364,15 @@ data class TradeListing(
         }
         return ((offeredAttack + offeredDefense + offeredSpeed + offeredWisdom) * mult) + ((90 + offeredBondLevel) * 3)
     }
+
+    fun isNpcListing(): Boolean {
+        return creatorUserId.isBlank() ||
+            DigimonCatalog.isNpcOrBotIdentifier(id) ||
+            DigimonCatalog.isNpcOrBotIdentifier(creatorUserId) ||
+            DigimonCatalog.isNpcOrBotIdentifier(creatorTrainerName) ||
+            DigimonCatalog.isNpcOrBotIdentifier(accepterUserId) ||
+            DigimonCatalog.isNpcOrBotIdentifier(accepterTrainerName)
+    }
 }
 
 @IgnoreExtraProperties
@@ -377,7 +386,16 @@ data class ChatMessage(
     val channelId: String = "global",
     val messageText: String = "",
     @ServerTimestamp val createdAt: Timestamp? = null
-)
+) {
+    fun isNpcMessage(): Boolean {
+        return senderUserId.isBlank() ||
+            DigimonCatalog.isNpcOrBotIdentifier(id) ||
+            DigimonCatalog.isNpcOrBotIdentifier(senderUserId) ||
+            DigimonCatalog.isNpcOrBotIdentifier(senderTrainerName) ||
+            DigimonCatalog.isNpcOrBotIdentifier(recipientUserId) ||
+            DigimonCatalog.isNpcOrBotIdentifier(channelId)
+    }
+}
 
 @IgnoreExtraProperties
 data class FriendConnection(
@@ -397,6 +415,14 @@ data class FriendConnection(
 
     fun otherPlayerName(myUserId: String): String =
         if (requesterUserId == myUserId) recipientTrainerName else requesterTrainerName
+
+    fun isNpcConnection(): Boolean {
+        return DigimonCatalog.isNpcOrBotIdentifier(id) ||
+            DigimonCatalog.isNpcOrBotIdentifier(requesterUserId) ||
+            DigimonCatalog.isNpcOrBotIdentifier(requesterTrainerName) ||
+            DigimonCatalog.isNpcOrBotIdentifier(recipientUserId) ||
+            DigimonCatalog.isNpcOrBotIdentifier(recipientTrainerName)
+    }
 
     fun otherPlayerPartner(myUserId: String): String =
         if (requesterUserId == myUserId) recipientPartnerName else requesterPartnerName
@@ -1620,6 +1646,63 @@ object DigimonCatalog {
         }
     }
 
+    private val npcIdPrefixes = listOf(
+        "npc_",
+        "bot_",
+        "rival_",
+        "seed_",
+        "demo_",
+        "ai_",
+        "mock_",
+        "system_",
+        "sample_",
+        "test_npc"
+    )
+
+    private val knownNpcIdentifiers = setOf(
+        "rival_taichi",
+        "rival_yamato",
+        "rival_rika",
+        "rival_takato",
+        "rival_hikari",
+        "kamiya_taichi",
+        "ishida_matt",
+        "nonaka_rika",
+        "matsuki_takato",
+        "tamer_kari",
+        "omni_tamer_kai",
+        "cyber_queen_rika",
+        "crest_guardian_matt",
+        "tamer_taichi",
+        "tamer_matt",
+        "tamer_rika",
+        "tamer_takato"
+    )
+
+    fun isNpcOrBotIdentifier(raw: String): Boolean {
+        val clean = raw.trim().lowercase()
+        if (clean.isEmpty()) return false
+        if (clean in knownNpcIdentifiers) return true
+        if (npcIdPrefixes.any { clean.startsWith(it) || clean.contains(":$it") || clean.contains("_$it") }) {
+            return true
+        }
+        return clean.contains("[npc]") || clean.contains("(npc)") || clean.contains("npc tamer")
+    }
+
+    fun isRookieStarterAllowed(speciesId: String): Boolean {
+        val spec = allSpecies[speciesId] ?: return false
+        return spec.stage == "Rookie" && !spec.isRareLevel100Spec
+    }
+
+    fun requireRookieStarterSpec(speciesId: String): DigimonSpeciesSpec {
+        val candidate = allSpecies[speciesId]
+        return if (candidate != null && candidate.stage == "Rookie" && !candidate.isRareLevel100Spec) {
+            candidate
+        } else {
+            allSpecies.getValue("agumon")
+        }
+    }
+
     val starterSpecs: List<DigimonSpeciesSpec>
         get() = listOf(
             getSpec("agumon"),
@@ -1628,7 +1711,15 @@ object DigimonCatalog {
             getSpec("guilmon"),
             getSpec("veemon"),
             getSpec("dorumon")
-        )
+        ).filter { it.stage == "Rookie" && !it.isRareLevel100Spec }
+
+    val allRookieSpecs: List<DigimonSpeciesSpec>
+        get() {
+            val coreIds = listOf("agumon", "gabumon", "patamon", "guilmon", "veemon", "dorumon")
+            val core = coreIds.mapNotNull { allSpecies[it] }.filter { it.stage == "Rookie" && !it.isRareLevel100Spec }
+            val extra = allSpeciesSpecs.filter { it.stage == "Rookie" && !it.isRareLevel100Spec && it.speciesId !in coreIds }
+            return (core + extra).filter { it.stage == "Rookie" && !it.isRareLevel100Spec }
+        }
 
     val level100RareSpecs: List<DigimonSpeciesSpec>
         get() = level100RareSpeciesIds.map { getSpec(it) }

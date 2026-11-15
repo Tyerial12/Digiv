@@ -507,17 +507,18 @@ class DigiPulseViewModel(
 
         val mergedMyTrades = (optimistic.myTrades + cloud.myTrades)
             .distinctBy { it.id }
-            .filter { !(it.status == "CANCELLED" && it.id in optimistic.closedTradeIds) }
+            .filter { !it.isNpcListing() && !(it.status == "CANCELLED" && it.id in optimistic.closedTradeIds) }
 
         val mergedOpenTrades = (cloud.openTrades + optimistic.myTrades.filter { it.status == "OPEN" })
             .distinctBy { it.id }
-            .filter { it.id !in optimistic.closedTradeIds && it.status == "OPEN" }
+            .filter { !it.isNpcListing() && it.id !in optimistic.closedTradeIds && it.status == "OPEN" }
 
         val mergedChatMessages = if (!isGoogleSignedIn) {
             emptyList()
         } else {
             (cloud.chatMessages + optimistic.chatMessages)
                 .distinctBy { it.id }
+                .filter { !it.isNpcMessage() }
                 .sortedBy { it.createdAt?.seconds ?: 0L }
         }
 
@@ -526,7 +527,7 @@ class DigiPulseViewModel(
         } else {
             (optimistic.friendships + cloud.friendships)
                 .distinctBy { it.id }
-                .filter { it.id !in optimistic.removedFriendshipIds }
+                .filter { !it.isNpcConnection() && it.id !in optimistic.removedFriendshipIds }
         }
 
         val todayKey = todayDateKey()
@@ -746,7 +747,14 @@ class DigiPulseViewModel(
     fun draftStarterTrio(choices: List<com.example.data.model.StarterDraftChoice>) {
         val selectedOne = choices.take(1)
         if (selectedOne.isEmpty()) {
-            _statusBannerMessage.value = "Please select 1 starter monster to begin your raising journey."
+            _statusBannerMessage.value = "Please select 1 Rookie starter monster to begin your raising journey."
+            return
+        }
+
+        val requestedChoice = selectedOne.first()
+        if (!DigimonCatalog.isRookieStarterAllowed(requestedChoice.speciesId)) {
+            _statusBannerMessage.value =
+                "Starter Rule: You can ONLY choose a Rookie-stage monster as your starter! Please select a Rookie monster."
             return
         }
 
@@ -755,7 +763,7 @@ class DigiPulseViewModel(
         val todayKey = todayDateKey()
 
         val draftedCreatures = selectedOne.mapIndexed { index, choice ->
-            val spec = DigimonCatalog.getSpec(choice.speciesId)
+            val spec = DigimonCatalog.requireRookieStarterSpec(choice.speciesId)
             val cleanNickname = choice.customNickname.trim().take(36).ifBlank { spec.speciesName }
             DigimonCreature(
                 id = "starter_${nowMs}_${index + 1}_${spec.speciesId}",
@@ -955,6 +963,11 @@ class DigiPulseViewModel(
         if (!isGoogleSignedIn) {
             _statusBannerMessage.value =
                 "Sign in with Google to trade monsters with other real-life players!"
+            return
+        }
+        if (listing.isNpcListing()) {
+            _statusBannerMessage.value =
+                "NPC trades are disabled! You can only trade monsters with real-life players."
             return
         }
         if (listing.creatorUserId == currentUserId) {
@@ -2694,12 +2707,21 @@ class DigiPulseViewModel(
             _statusBannerMessage.value = "You can only use Friends & Player Chat when logged into Google!"
             return
         }
+        if (friendUserId.isNotBlank() && DigimonCatalog.isNpcOrBotIdentifier(friendUserId)) {
+            _statusBannerMessage.value = "NPCs are removed from Chat! You can only chat with real-life players."
+            _activeDirectChatFriendId.value = ""
+            return
+        }
         _activeDirectChatFriendId.value = friendUserId
     }
 
     fun sendChatMessage(messageText: String, recipientUserId: String = _activeDirectChatFriendId.value) {
         if (!isGoogleSignedIn) {
             _statusBannerMessage.value = "You can only use Friends & Player Chat when logged into Google!"
+            return
+        }
+        if (recipientUserId.isNotBlank() && DigimonCatalog.isNpcOrBotIdentifier(recipientUserId)) {
+            _statusBannerMessage.value = "NPCs are removed from Chat! You can only message real-life players."
             return
         }
         val cleanText = messageText.trim().take(300)
@@ -2751,6 +2773,10 @@ class DigiPulseViewModel(
         val cleanTargetId = targetUserId.trim()
         if (cleanTargetId.isBlank() || cleanTargetId == currentUserId) {
             _statusBannerMessage.value = "Enter another real player's Tamer ID or select a player from Chat/Rankings."
+            return
+        }
+        if (DigimonCatalog.isNpcOrBotIdentifier(cleanTargetId) || DigimonCatalog.isNpcOrBotIdentifier(targetTrainerName)) {
+            _statusBannerMessage.value = "NPCs are removed from Friends & Chat! You can only add real-life players."
             return
         }
         val docId = FriendConnection.buildFriendshipDocId(currentUserId, cleanTargetId)

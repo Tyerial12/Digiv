@@ -94,13 +94,13 @@ fun PlayerChatAndFriendsTab(
     var showAddFriendDialog by remember { mutableStateOf(false) }
 
     val incomingRequests = remember(state.friendships, currentUserId) {
-        state.friendships.filter { it.status == "PENDING" && it.recipientUserId == currentUserId }
+        state.friendships.filter { !it.isNpcConnection() && it.status == "PENDING" && it.recipientUserId == currentUserId }
     }
     val outgoingRequests = remember(state.friendships, currentUserId) {
-        state.friendships.filter { it.status == "PENDING" && it.requesterUserId == currentUserId }
+        state.friendships.filter { !it.isNpcConnection() && it.status == "PENDING" && it.requesterUserId == currentUserId }
     }
     val acceptedFriends = remember(state.friendships) {
-        state.friendships.filter { it.status == "ACCEPTED" }
+        state.friendships.filter { !it.isNpcConnection() && it.status == "ACCEPTED" }
     }
 
     val activeFriend = remember(acceptedFriends, state.activeDirectChatFriendId, currentUserId) {
@@ -119,11 +119,11 @@ fun PlayerChatAndFriendsTab(
     }
 
     val filteredMessages = remember(state.chatMessages, activeChannelId) {
-        state.chatMessages.filter { it.channelId == activeChannelId }
+        state.chatMessages.filter { !it.isNpcMessage() && it.channelId == activeChannelId }
     }
 
     val knownFriendUserIds = remember(state.friendships, currentUserId) {
-        state.friendships.map { it.otherPlayerId(currentUserId) }.toSet()
+        state.friendships.filter { !it.isNpcConnection() }.map { it.otherPlayerId(currentUserId) }.toSet()
     }
 
     Column(
@@ -166,7 +166,7 @@ fun PlayerChatAndFriendsTab(
                                 fontWeight = FontWeight.ExtraBold
                             )
                             Text(
-                                text = "Google Linked • Your Tamer ID: ${currentUserId.take(10)}",
+                                text = "Real Players Only (No NPCs) • Your ID: ${currentUserId.take(10)}",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -400,7 +400,7 @@ fun PlayerChatAndFriendsTab(
                     text = if (friendName != null) {
                         "DIRECT FRIEND LINK // $friendName (${friendPartner ?: "Rookie"})"
                     } else {
-                        "GLOBAL TAMER LOBBY // LIVE REAL-PLAYER CHAT"
+                        "GLOBAL TAMER LOBBY // REAL PLAYERS ONLY • NO NPCs"
                     },
                     style = MaterialTheme.typography.labelSmall,
                     color = if (activeFriend != null) BioEmeraldHealth else HoloCyanPrimary,

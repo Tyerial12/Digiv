@@ -490,7 +490,9 @@ fun SocialLeaderboardTab(
                                     )
                                 }
 
-                                if (isGoogleSignedIn) {
+                                val isNpcBenchmark = DigimonCatalog.isNpcOrBotIdentifier(entry.userId) ||
+                                    DigimonCatalog.isNpcOrBotIdentifier(entry.trainerName)
+                                if (isGoogleSignedIn && !isNpcBenchmark) {
                                     OutlinedButton(
                                         onClick = { onAddFriend(entry) },
                                         shape = RoundedCornerShape(10.dp),
@@ -815,10 +817,10 @@ fun GlobalTradeExchangeTab(
     var tradeToAccept by remember { mutableStateOf<TradeListing?>(null) }
 
     val otherPlayersOpenListings = remember(openTradeListings, currentUserId) {
-        openTradeListings.filter { it.creatorUserId != currentUserId && it.status == "OPEN" }
+        openTradeListings.filter { !it.isNpcListing() && it.creatorUserId != currentUserId && it.status == "OPEN" }
     }
     val myOpenListings = remember(myTradeListings) {
-        myTradeListings.filter { it.status == "OPEN" }
+        myTradeListings.filter { !it.isNpcListing() && it.status == "OPEN" }
     }
 
     LazyColumn(
@@ -841,7 +843,7 @@ fun GlobalTradeExchangeTab(
                         color = HoloCyanPrimary
                     )
                     Text(
-                        text = "Trade raised monsters with real-life Tamers worldwide • Keep at least 1 partner in your squad.",
+                        text = "Real Players Only (No NPCs) • Trade raised monsters with real-life Tamers worldwide • Keep at least 1 partner in your squad.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -985,12 +987,12 @@ fun GlobalTradeExchangeTab(
                             modifier = Modifier.size(36.dp)
                         )
                         Text(
-                            text = "No Other Player Trades Open Right Now",
+                            text = "No Other Real Player Trades Open Right Now",
                             style = MaterialTheme.typography.titleLarge,
                             color = Color.White
                         )
                         Text(
-                            text = "Tap POST TRADE above to list one of your monsters for other real-life players to swap with!",
+                            text = "NPCs are removed from Trade. Tap POST TRADE above to list one of your monsters for other real-life players to swap with!",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

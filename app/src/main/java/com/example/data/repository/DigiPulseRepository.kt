@@ -167,7 +167,9 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                     snapshot.toObjects(
                         TradeListing::class.java,
                         DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ).sortedByDescending { it.createdAt?.seconds ?: 0L }
+                    )
+                        .filter { !it.isNpcListing() }
+                        .sortedByDescending { it.createdAt?.seconds ?: 0L }
                 }
                 .catch { error ->
                     val firestoreError = generateSequence(error) { it.cause }
@@ -194,7 +196,9 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                     snapshot.toObjects(
                         TradeListing::class.java,
                         DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ).sortedByDescending { it.createdAt?.seconds ?: 0L }
+                    )
+                        .filter { !it.isNpcListing() }
+                        .sortedByDescending { it.createdAt?.seconds ?: 0L }
                 }
                 .catch { error ->
                     val firestoreError = generateSequence(error) { it.cause }
@@ -221,7 +225,9 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                     snapshot.toObjects(
                         ChatMessage::class.java,
                         DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ).sortedBy { it.createdAt?.seconds ?: 0L }
+                    )
+                        .filter { !it.isNpcMessage() }
+                        .sortedBy { it.createdAt?.seconds ?: 0L }
                 }
                 .catch { error ->
                     val firestoreError = generateSequence(error) { it.cause }
@@ -248,7 +254,7 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                     snapshot.toObjects(
                         ChatMessage::class.java,
                         DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    )
+                    ).filter { !it.isNpcMessage() }
                 }
                 .catch { error ->
                     val firestoreError = generateSequence(error) { it.cause }
@@ -275,7 +281,7 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                     snapshot.toObjects(
                         ChatMessage::class.java,
                         DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    )
+                    ).filter { !it.isNpcMessage() }
                 }
                 .catch { error ->
                     val firestoreError = generateSequence(error) { it.cause }
@@ -302,7 +308,7 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                     snapshot.toObjects(
                         FriendConnection::class.java,
                         DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    )
+                    ).filter { !it.isNpcConnection() }
                 }
                 .catch { error ->
                     val firestoreError = generateSequence(error) { it.cause }
@@ -329,7 +335,7 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                     snapshot.toObjects(
                         FriendConnection::class.java,
                         DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    )
+                    ).filter { !it.isNpcConnection() }
                 }
                 .catch { error ->
                     val firestoreError = generateSequence(error) { it.cause }
@@ -898,9 +904,23 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
         val nowMs = System.currentTimeMillis()
         val todayKey = SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date(nowMs))
 
-        val draftedCreatures = prebuiltCreatures?.take(1)?.map { it.copy(userId = uid) }
+        val draftedCreatures = prebuiltCreatures?.take(1)?.map { prebuilt ->
+            val rookieSpec = DigimonCatalog.requireRookieStarterSpec(prebuilt.speciesId)
+            prebuilt.copy(
+                userId = uid,
+                speciesId = rookieSpec.speciesId,
+                speciesName = rookieSpec.speciesName,
+                stage = "Rookie",
+                attribute = rookieSpec.attribute,
+                attack = rookieSpec.baseAttack,
+                defense = rookieSpec.baseDefense,
+                speed = rookieSpec.baseSpeed,
+                wisdom = rookieSpec.baseWisdom,
+                unlockedForms = listOf(rookieSpec.speciesId)
+            )
+        }
             ?: selected.mapIndexed { index, choice ->
-                val spec = DigimonCatalog.getSpec(choice.speciesId)
+                val spec = DigimonCatalog.requireRookieStarterSpec(choice.speciesId)
                 val cleanNickname = choice.customNickname.trim().take(36).ifBlank { spec.speciesName }
                 DigimonCreature(
                     id = "starter_${nowMs}_${index + 1}_${spec.speciesId}",

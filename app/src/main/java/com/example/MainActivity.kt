@@ -1,5 +1,7 @@
 package com.example
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -7,6 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +36,7 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.SwapHoriz
+import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -97,12 +101,15 @@ import com.example.ui.theme.HoloCardElevated
 import com.example.ui.theme.HoloCyanPrimary
 import com.example.ui.theme.HoloSlateSurface
 import com.example.ui.theme.VirusCrimsonError
+import com.example.util.AppUpdateChecker
+import com.example.util.GameUpdateCheckResult
 import com.example.util.PetNotificationHelper
 import com.example.viewmodel.DigiPulseViewModel
 import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.launch
 
 enum class DigiPulseTab {
     DECK,
@@ -132,12 +139,58 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DigiPulseRootApp() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val sessionPrefs = remember(context) {
         context.applicationContext.getSharedPreferences("digiverse_player_state", android.content.Context.MODE_PRIVATE)
     }
     var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
     var isLocalGuestMode by remember {
         mutableStateOf(sessionPrefs.getBoolean("is_local_guest_mode", false))
+    }
+    var updateCheckResult by remember { mutableStateOf<GameUpdateCheckResult?>(null) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var isCheckingForUpdate by remember { mutableStateOf(false) }
+
+    val triggerUpdateCheck: (Boolean) -> Unit = { openDialogEvenIfUpToDate ->
+        if (!isCheckingForUpdate) {
+            isCheckingForUpdate = true
+            scope.launch {
+                val lastAlertedVersion = sessionPrefs.getString("last_update_alert_version", "").orEmpty()
+                val isFirstLaunchOfThisVersion = lastAlertedVersion != BuildConfig.VERSION_NAME
+                val result = AppUpdateChecker.checkForUpdateOnLaunch(
+                    isFirstLaunchOfThisVersion = isFirstLaunchOfThisVersion
+                )
+                updateCheckResult = result
+                isCheckingForUpdate = false
+                if (result.isUpdateAvailable) {
+                    showUpdateDialog = true
+                    PetNotificationHelper.dispatchSystemAlert(
+                        context = context,
+                        notificationId = 9901,
+                        title = "Digi Verse Update Available (v${result.latestVersionName})!",
+                        message = "A newer version (v${result.latestVersionName}) is available! Tap to download the latest APK."
+                    )
+                } else if (result.isNewVersionFirstLaunch) {
+                    showUpdateDialog = true
+                    sessionPrefs.edit()
+                        .putString("last_update_alert_version", BuildConfig.VERSION_NAME)
+                        .apply()
+                    PetNotificationHelper.dispatchSystemAlert(
+                        context = context,
+                        notificationId = 9901,
+                        title = "Digi Verse v${result.installedVersionName} Launch Update Ready!",
+                        message = "Welcome to Digi Verse v${result.installedVersionName}! Launch Update Checker is active."
+                    )
+                } else if (openDialogEvenIfUpToDate) {
+                    showUpdateDialog = true
+                }
+            }
+        }
+    }
+
+    // Automatically check if there is a game update available when launching the game
+    LaunchedEffect(Unit) {
+        triggerUpdateCheck(false)
     }
 
     DisposableEffect(Unit) {
@@ -178,12 +231,174 @@ fun DigiPulseRootApp() {
                 currentUserId = uid,
                 initialTrainerName = displayName,
                 isGoogleSignedIn = isGoogleSignedIn,
+                updateCheckResult = updateCheckResult,
+                onCheckForUpdateClick = {
+                    if (updateCheckResult?.isUpdateAvailable == true) {
+                        showUpdateDialog = true
+                    } else {
+                        triggerUpdateCheck(true)
+                    }
+                },
                 onRequestGoogleSignIn = {
                     isLocalGuestMode = false
                     sessionPrefs.edit().putBoolean("is_local_guest_mode", false).apply()
                 }
             )
         }
+    }
+
+    val activeUpdateInfo = updateCheckResult
+    if (showUpdateDialog && activeUpdateInfo != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showUpdateDialog = false
+                sessionPrefs.edit()
+                    .putString("last_update_alert_version", BuildConfig.VERSION_NAME)
+                    .apply()
+            },
+            containerColor = HoloCardElevated,
+            modifier = Modifier.testTag("game_update_available_dialog"),
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.SystemUpdateAlt,
+                    contentDescription = "Game Update Check",
+                    tint = if (activeUpdateInfo.isUpdateAvailable || activeUpdateInfo.isNewVersionFirstLaunch) {
+                        EvolutionGoldSecondary
+                    } else {
+                        HoloCyanPrimary
+                    },
+                    modifier = Modifier.size(42.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = when {
+                        activeUpdateInfo.isUpdateAvailable ->
+                            "UPDATE AVAILABLE: v${activeUpdateInfo.latestVersionName}!"
+                        activeUpdateInfo.isNewVersionFirstLaunch ->
+                            "GAME UPDATE ALERT (v${activeUpdateInfo.installedVersionName})"
+                        else ->
+                            "GAME UP TO DATE (v${activeUpdateInfo.installedVersionName})"
+                    },
+                    style = MaterialTheme.typography.headlineMedium,
+                    color = if (activeUpdateInfo.isUpdateAvailable || activeUpdateInfo.isNewVersionFirstLaunch) {
+                        EvolutionGoldSecondary
+                    } else {
+                        HoloCyanPrimary
+                    }
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = when {
+                            activeUpdateInfo.isUpdateAvailable ->
+                                "A newer version of Digi Verse is available! Update now to get the latest features, balance updates, and fixes."
+                            activeUpdateInfo.isNewVersionFirstLaunch ->
+                                "Launch Update Alert Active! You are running Digi Verse v${activeUpdateInfo.installedVersionName}. Whenever a newer update is published on GitHub, you will be alerted automatically on game launch."
+                            else ->
+                                "You are running Digi Verse v${activeUpdateInfo.installedVersionName}. Launch update checks run automatically every time you start the game."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color.White
+                    )
+                    Surface(
+                        color = HoloSlateSurface,
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            if (activeUpdateInfo.isUpdateAvailable || activeUpdateInfo.isNewVersionFirstLaunch) {
+                                EvolutionGoldSecondary
+                            } else {
+                                HoloCyanPrimary.copy(alpha = 0.5f)
+                            }
+                        )
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "Installed Version: v${activeUpdateInfo.installedVersionName} • Latest Version: v${activeUpdateInfo.latestVersionName}",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (activeUpdateInfo.isUpdateAvailable) {
+                                    EvolutionGoldSecondary
+                                } else {
+                                    com.example.ui.theme.BioEmeraldHealth
+                                }
+                            )
+                            Text(
+                                text = activeUpdateInfo.releaseNotes.take(280),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    if (!activeUpdateInfo.isUpdateAvailable) {
+                        OutlinedButton(
+                            onClick = {
+                                val nextMajor = (BuildConfig.VERSION_CODE + 1).toString() + ".0"
+                                updateCheckResult = activeUpdateInfo.copy(
+                                    latestVersionName = nextMajor,
+                                    isUpdateAvailable = true,
+                                    releaseNotes = "Simulated Update Alert (v$nextMajor): Tap DOWNLOAD UPDATE APK to open the GitHub Releases page and install the newest build."
+                                )
+                            },
+                            border = BorderStroke(1.dp, EvolutionGoldSecondary.copy(alpha = 0.7f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("simulate_update_available_button")
+                        ) {
+                            Text(
+                                text = "PREVIEW 'UPDATE AVAILABLE' ALERT BANNER & DIALOG",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = EvolutionGoldSecondary
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showUpdateDialog = false
+                        sessionPrefs.edit()
+                            .putString("last_update_alert_version", BuildConfig.VERSION_NAME)
+                            .apply()
+                        runCatching {
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(activeUpdateInfo.downloadUrl)).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(intent)
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (activeUpdateInfo.isUpdateAvailable) EvolutionGoldSecondary else HoloCyanPrimary,
+                        contentColor = CyberVoidBg
+                    ),
+                    modifier = Modifier.testTag("download_game_update_button")
+                ) {
+                    Text(
+                        text = if (activeUpdateInfo.isUpdateAvailable) "DOWNLOAD UPDATE APK" else "VIEW RELEASES"
+                    )
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = {
+                        showUpdateDialog = false
+                        sessionPrefs.edit()
+                            .putString("last_update_alert_version", BuildConfig.VERSION_NAME)
+                            .apply()
+                    },
+                    border = BorderStroke(1.dp, HoloCyanPrimary)
+                ) {
+                    Text(if (activeUpdateInfo.isUpdateAvailable) "LATER" else "CONTINUE", color = HoloCyanPrimary)
+                }
+            }
+        )
     }
 }
 
@@ -193,6 +408,8 @@ fun AuthenticatedHoloDashboard(
     currentUserId: String,
     initialTrainerName: String,
     isGoogleSignedIn: Boolean = true,
+    updateCheckResult: GameUpdateCheckResult? = null,
+    onCheckForUpdateClick: () -> Unit = {},
     onRequestGoogleSignIn: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -333,6 +550,30 @@ fun AuthenticatedHoloDashboard(
                     }
                 },
                 actions = {
+                    IconButton(
+                        onClick = onCheckForUpdateClick,
+                        modifier = Modifier.testTag("top_bar_check_update_button")
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (updateCheckResult?.isUpdateAvailable == true) {
+                                    Badge(
+                                        containerColor = EvolutionGoldSecondary,
+                                        contentColor = CyberVoidBg
+                                    ) {
+                                        Text("NEW")
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdateAlt,
+                                contentDescription = "Check for Game Update",
+                                tint = if (updateCheckResult?.isUpdateAvailable == true) EvolutionGoldSecondary else HoloCyanPrimary
+                            )
+                        }
+                    }
+
                     IconButton(
                         onClick = { showDailyLoginDialog = true },
                         modifier = Modifier.testTag("daily_login_top_bar_button")
@@ -581,6 +822,50 @@ fun AuthenticatedHoloDashboard(
                             text = label.uppercase(),
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1
+                        )
+                    }
+                }
+            }
+            // Launch Update Available Alert Banner
+            AnimatedVisibility(visible = updateCheckResult?.isUpdateAvailable == true) {
+                Surface(
+                    color = EvolutionGoldSecondary.copy(alpha = 0.18f),
+                    border = BorderStroke(1.5.dp, EvolutionGoldSecondary),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp)
+                        .clickable { onCheckForUpdateClick() }
+                        .testTag("launch_update_available_banner")
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdateAlt,
+                                contentDescription = "Update Available",
+                                tint = EvolutionGoldSecondary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "UPDATE AVAILABLE (v${updateCheckResult?.latestVersionName.orEmpty()})! Tap to download latest APK.",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = EvolutionGoldSecondary
+                            )
+                        }
+                        Text(
+                            text = "UPDATE ➔",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.White
                         )
                     }
                 }
