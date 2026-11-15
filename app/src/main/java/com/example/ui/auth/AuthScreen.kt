@@ -64,6 +64,8 @@ import androidx.credentials.CredentialManager
 import androidx.credentials.CustomCredential
 import androidx.credentials.GetCredentialRequest
 import androidx.credentials.exceptions.GetCredentialCancellationException
+import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
 import com.example.R
 import com.example.ui.theme.BioEmeraldHealth
 import com.example.ui.theme.CyberVoidBg
@@ -122,6 +124,10 @@ fun attemptAutoSignIn(
             } else {
                 onUnauthenticated()
             }
+        } catch (e: NoCredentialException) {
+            onUnauthenticated()
+        } catch (e: GetCredentialException) {
+            onUnauthenticated()
         } catch (e: Exception) {
             onUnauthenticated()
         }
@@ -134,12 +140,21 @@ fun onGoogleSignInClicked(
     onAuthSuccess: () -> Unit,
     onAuthError: (String) -> Unit,
     scope: CoroutineScope,
-    onAuthCancelled: () -> Unit = {}
+    onAuthCancelled: () -> Unit = {},
+    onFallbackToLocalMode: (() -> Unit)? = null
 ) {
+    if (Firebase.auth.currentUser != null) {
+        onAuthSuccess()
+        return
+    }
     val clientId = try {
         context.getString(R.string.default_web_client_id)
     } catch (e: Exception) {
-        onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
+        if (onFallbackToLocalMode != null) {
+            onFallbackToLocalMode()
+        } else {
+            onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
+        }
         return
     }
 
@@ -147,8 +162,8 @@ fun onGoogleSignInClicked(
     val request = GetCredentialRequest.Builder().addCredentialOption(signInOption).build()
 
     scope.launch {
+        val activityContext = context as? Activity ?: context
         try {
-            val activityContext = context as? Activity ?: context
             val result = credentialManager.getCredential(activityContext, request)
             val credential = result.credential
             if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
@@ -162,9 +177,55 @@ fun onGoogleSignInClicked(
         } catch (e: GetCredentialCancellationException) {
             Log.w("Auth", "Google Sign-In flow cancelled or dismissed: ${e.message}", e)
             onAuthCancelled()
+        } catch (e: NoCredentialException) {
+            Log.w("Auth", "No Google credentials found via GetSignInWithGoogleOption, trying GetGoogleIdOption fallback", e)
+            try {
+                val fallbackOption = GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setServerClientId(clientId)
+                    .build()
+                val fallbackReq = GetCredentialRequest.Builder().addCredentialOption(fallbackOption).build()
+                val fallbackRes = credentialManager.getCredential(activityContext, fallbackReq)
+                val credential = fallbackRes.credential
+                if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                    val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
+                    val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
+                    Firebase.auth.signInWithCredential(authCredential).await()
+                    onAuthSuccess()
+                } else if (onFallbackToLocalMode != null) {
+                    onFallbackToLocalMode()
+                } else {
+                    onAuthError("No Google account available on this device. Tap 'Play Without Google Login' below.")
+                }
+            } catch (cancelEx: GetCredentialCancellationException) {
+                onAuthCancelled()
+            } catch (fallbackEx: NoCredentialException) {
+                if (onFallbackToLocalMode != null) {
+                    onFallbackToLocalMode()
+                } else {
+                    onAuthError("No Google account available on this device. Tap 'Play Without Google Login' below.")
+                }
+            } catch (fallbackEx: Exception) {
+                if (onFallbackToLocalMode != null) {
+                    onFallbackToLocalMode()
+                } else {
+                    onAuthError(fallbackEx.localizedMessage ?: "Sign in failed")
+                }
+            }
+        } catch (e: GetCredentialException) {
+            Log.e("Auth", "Google Sign-In credential error", e)
+            if (onFallbackToLocalMode != null) {
+                onFallbackToLocalMode()
+            } else {
+                onAuthError(e.localizedMessage ?: "Sign in failed")
+            }
         } catch (e: Exception) {
             Log.e("Auth", "Google Sign-In failed", e)
-            onAuthError(e.localizedMessage ?: "Sign in failed")
+            if (onFallbackToLocalMode != null) {
+                onFallbackToLocalMode()
+            } else {
+                onAuthError(e.localizedMessage ?: "Sign in failed")
+            }
         }
     }
 }
@@ -370,6 +431,10 @@ fun AuthScreen(
                         scope = scope,
                         onAuthCancelled = {
                             isLoading = false
+                        },
+                        onFallbackToLocalMode = {
+                            isLoading = false
+                            onContinueWithoutLogin()
                         }
                     )
                 },

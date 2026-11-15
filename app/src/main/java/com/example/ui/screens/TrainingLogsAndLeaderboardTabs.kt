@@ -1076,7 +1076,11 @@ fun GlobalTradeExchangeTab(
 
     // Dialog to Post a Monster for Trade
     if (showCreateTradeDialog && myCreatures.isNotEmpty()) {
-        var selectedCreatureId by remember { mutableStateOf(myCreatures.first().id) }
+        var selectedCreatureId by remember(myCreatures) {
+            mutableStateOf(myCreatures.firstOrNull()?.id.orEmpty())
+        }
+        val activeSelectedCreatureId = selectedCreatureId.takeIf { id -> myCreatures.any { it.id == id } }
+            ?: myCreatures.firstOrNull()?.id.orEmpty()
         val requestOptions = listOf(
             "Any Stage",
             "Rookie",
@@ -1105,7 +1109,7 @@ fun GlobalTradeExchangeTab(
                         color = EvolutionGoldSecondary
                     )
                     myCreatures.forEach { creature ->
-                        val isChosen = creature.id == selectedCreatureId
+                        val isChosen = creature.id == activeSelectedCreatureId
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1164,7 +1168,9 @@ fun GlobalTradeExchangeTab(
             confirmButton = {
                 Button(
                     onClick = {
-                        onPostCreatureForTrade(selectedCreatureId, selectedRequest)
+                        if (activeSelectedCreatureId.isNotBlank()) {
+                            onPostCreatureForTrade(activeSelectedCreatureId, selectedRequest)
+                        }
                         showCreateTradeDialog = false
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -1194,7 +1200,9 @@ fun GlobalTradeExchangeTab(
                 c.speciesName.equals(activeOffer.requestedStageOrSpecies, ignoreCase = true)
         }
         val selectableList = matchingCreatures.ifEmpty { myCreatures }
-        var chosenMyCreatureId by remember(activeOffer.id) { mutableStateOf(selectableList.first().id) }
+        var chosenMyCreatureId by remember(activeOffer.id, selectableList) {
+            mutableStateOf(selectableList.firstOrNull()?.id.orEmpty())
+        }
 
         AlertDialog(
             onDismissRequest = { tradeToAccept = null },

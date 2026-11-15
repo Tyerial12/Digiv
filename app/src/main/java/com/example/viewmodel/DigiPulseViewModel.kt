@@ -548,10 +548,57 @@ class DigiPulseViewModel(
     )
 
     init {
+        val savedCoins = repository.loadDigiCoins(currentUserId)
+        val savedBerries = repository.loadTammingBerryCount(currentUserId)
+        val savedFood = repository.loadFoodInventory(currentUserId)
+        val (savedDailyDate, savedDailySummary) = repository.loadDailyLoginState(currentUserId)
+        val savedLocalCreatures = repository.loadLocalCreatures(currentUserId)
+        _digiCoins.value = savedCoins
+        _tammingBerryCount.value = savedBerries
+        _foodInventory.value = savedFood
+        _lastClaimedDailyLoginDateKey.value = savedDailyDate
+        _lastDailyLoginRewardSummary.value = savedDailySummary
+        if (savedLocalCreatures.isNotEmpty()) {
+            _optimisticCreatures.value = savedLocalCreatures
+        }
+
+        observeLocalEconomyPersistence()
         scanWildMonster()
         startRealTimeTelemetryTicker()
         if (isGoogleSignedIn) {
             observeCompletedTradesToClaim()
+        }
+    }
+
+    private fun observeLocalEconomyPersistence() {
+        viewModelScope.launch {
+            _digiCoins.collect { coins ->
+                if (!_isResetting.value) {
+                    repository.saveDigiCoins(currentUserId, coins)
+                }
+            }
+        }
+        viewModelScope.launch {
+            _tammingBerryCount.collect { count ->
+                if (!_isResetting.value) {
+                    repository.saveTammingBerryCount(currentUserId, count)
+                }
+            }
+        }
+        viewModelScope.launch {
+            _foodInventory.collect { inv ->
+                if (!_isResetting.value) {
+                    repository.saveFoodInventory(currentUserId, inv)
+                }
+            }
+        }
+        viewModelScope.launch {
+            combine(_lastClaimedDailyLoginDateKey, _lastDailyLoginRewardSummary) { d, s -> d to s }
+                .collect { (dateKey, summary) ->
+                    if (!_isResetting.value && dateKey.isNotBlank()) {
+                        repository.saveDailyLoginState(currentUserId, dateKey, summary)
+                    }
+                }
         }
     }
 
@@ -607,11 +654,14 @@ class DigiPulseViewModel(
             current + updated
         }
         _optimisticCreatures.value = next
+        repository.saveLocalCreatures(currentUserId, next)
     }
 
     private fun removeOptimisticCreature(creatureId: String) {
         _removedCreatureIds.value = _removedCreatureIds.value + creatureId
-        _optimisticCreatures.value = _optimisticCreatures.value.filter { it.id != creatureId }
+        val next = _optimisticCreatures.value.filter { it.id != creatureId }
+        _optimisticCreatures.value = next
+        repository.saveLocalCreatures(currentUserId, next)
     }
 
     private fun notificationDedupKey(notif: PetNotification): String {
@@ -691,8 +741,10 @@ class DigiPulseViewModel(
         _isResetting.value = false
         _removedCreatureIds.value = emptySet()
         _optimisticCreatures.value = draftedCreatures
+        repository.saveLocalCreatures(currentUserId, draftedCreatures)
         _selectedCreatureId.value = lead.id
         _digiCoins.value = DigimonCatalog.STARTING_DIGI_COINS
+        repository.saveDigiCoins(currentUserId, DigimonCatalog.STARTING_DIGI_COINS)
         _nextDigiCoinTickSec.value = DigimonCatalog.DIGI_COIN_INTERVAL_SEC
         prependOptimisticLog(
             TrainingLogEntry(
@@ -734,6 +786,7 @@ class DigiPulseViewModel(
 
     fun resetAllProgress() {
         _isResetting.value = true
+        repository.clearLocalUserProgress(currentUserId)
         _optimisticCreatures.value = emptyList()
         _removedCreatureIds.value = emptySet()
         _optimisticLogs.value = emptyList()
@@ -1262,11 +1315,13 @@ class DigiPulseViewModel(
         _statusBannerMessage.value = "★ $fullSummary!"
 
         val lead = currentState.activeCreature
+        val safeCreatureId = lead?.id?.takeIf { it.isNotBlank() } ?: "daily_login"
+        val safeCreatureName = lead?.nickname?.takeIf { it.isNotBlank() } ?: "Tamer"
         val logEntry = prependOptimisticLog(
             TrainingLogEntry(
                 userId = currentUserId,
-                creatureId = lead?.id ?: "daily_login",
-                creatureName = lead?.nickname ?: "Tamer",
+                creatureId = safeCreatureId,
+                creatureName = safeCreatureName,
                 activityType = "Nutrient Feed",
                 grade = "CARE",
                 statDeltaSummary = fullSummary.take(160),
@@ -1277,8 +1332,8 @@ class DigiPulseViewModel(
         val notif = prependOptimisticNotification(
             PetNotification(
                 userId = currentUserId,
-                creatureId = lead?.id ?: "daily_login",
-                creatureName = lead?.nickname ?: "Tamer",
+                creatureId = safeCreatureId,
+                creatureName = safeCreatureName,
                 severity = "INFO",
                 title = "Daily Login Reward Claimed!",
                 message = "Day $streakDay Streak Reward: $rewardDetail",
@@ -1761,7 +1816,11 @@ class DigiPulseViewModel(
         val spec = DigimonCatalog.getSpec(encounter.speciesId)
         val nowMs = System.currentTimeMillis()
         val localId = "tamed_${nowMs}_${spec.speciesId}"
-        val tamedBaseBonus = (spec.baseAttack + spec.baseDefense + spec.baseSpeed + spec.baseWisdom - 172).coerceAtLeast(0)
+        val tamedBaseBonus = if (spec.stage == "Rookie") {
+            0
+        } else {
+            (spec.baseAttack + spec.baseDefense + spec.baseSpeed + spec.baseWisdom - 172).coerceAtLeast(0)
+        }
         val initialForms = buildList {
             add(spec.speciesId)
             if (tamedBaseBonus > 0) add("bn:$tamedBaseBonus")
@@ -2011,26 +2070,7 @@ class DigiPulseViewModel(
         }
         val statBonusTotal = node.atkBonus + node.defBonus + node.spdBonus + node.wisBonus
         val newUnlockedList = (currentUnlocked + node.nodeId).toList()
-        val originRookieId = active.unlockedEvolutionFormIds().firstOrNull { id ->
-            DigimonCatalog.allSpecies[id]?.stage == "Rookie"
-        }
-        val originSpec = when {
-            originRookieId != null -> DigimonCatalog.allSpecies[originRookieId]
-            active.stage == "Rookie" -> DigimonCatalog.allSpecies[active.speciesId]
-            else -> null
-        }
-        val originBaseSum = if (originSpec != null) {
-            originSpec.baseAttack + originSpec.baseDefense + originSpec.baseSpeed + originSpec.baseWisdom
-        } else {
-            172
-        }
-        val currentStatSum = active.attack + active.defense + active.speed + active.wisdom
-        val currentLevelTrainedStats = (active.currentLevel() - 1) * 9
-        val baselineNonTrainingBonus = maxOf(
-            active.persistedNonTrainingBonusStats(),
-            (currentStatSum - originBaseSum - currentLevelTrainedStats).coerceAtLeast(0)
-        )
-        val newBonusStats = baselineNonTrainingBonus + statBonusTotal
+        val newBonusStats = active.persistedNonTrainingBonusStats() + statBonusTotal
         val newForms = active.withUpdatedMetadataInForms(
             newSkillNodes = newUnlockedList,
             newBonusStats = newBonusStats,

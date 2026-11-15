@@ -112,8 +112,8 @@ data class DigimonCreature(
             DigimonCatalog.allSpecies[id]?.stage == "Rookie"
         }
         val originSpec = when {
-            originRookieId != null -> DigimonCatalog.allSpecies[originRookieId]
             stage == "Rookie" -> DigimonCatalog.allSpecies[speciesId]
+            originRookieId != null -> DigimonCatalog.allSpecies[originRookieId]
             else -> null
         }
         val originBaseSum = if (originSpec != null) {

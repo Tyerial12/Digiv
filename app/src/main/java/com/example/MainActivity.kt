@@ -131,14 +131,21 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun DigiPulseRootApp() {
+    val context = LocalContext.current
+    val sessionPrefs = remember(context) {
+        context.applicationContext.getSharedPreferences("digiverse_player_state", android.content.Context.MODE_PRIVATE)
+    }
     var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
-    var isLocalGuestMode by remember { mutableStateOf(false) }
+    var isLocalGuestMode by remember {
+        mutableStateOf(sessionPrefs.getBoolean("is_local_guest_mode", false))
+    }
 
     DisposableEffect(Unit) {
         val listener = FirebaseAuth.AuthStateListener { auth ->
             currentUser = auth.currentUser
             if (auth.currentUser != null) {
                 isLocalGuestMode = false
+                sessionPrefs.edit().putBoolean("is_local_guest_mode", false).apply()
             }
         }
         Firebase.auth.addAuthStateListener(listener)
@@ -153,9 +160,11 @@ fun DigiPulseRootApp() {
             onAuthSuccess = {
                 currentUser = Firebase.auth.currentUser
                 isLocalGuestMode = false
+                sessionPrefs.edit().putBoolean("is_local_guest_mode", false).apply()
             },
             onContinueWithoutLogin = {
                 isLocalGuestMode = true
+                sessionPrefs.edit().putBoolean("is_local_guest_mode", true).apply()
             }
         )
     } else {
@@ -171,6 +180,7 @@ fun DigiPulseRootApp() {
                 isGoogleSignedIn = isGoogleSignedIn,
                 onRequestGoogleSignIn = {
                     isLocalGuestMode = false
+                    sessionPrefs.edit().putBoolean("is_local_guest_mode", false).apply()
                 }
             )
         }
@@ -196,10 +206,8 @@ fun AuthenticatedHoloDashboard(
                 val app = checkNotNull(this[APPLICATION_KEY]) {
                     "APPLICATION_KEY missing from CreationExtras"
                 }
-                val databaseId = app.getString(R.string.firestore_database_id)
-                val db = FirebaseFirestore.getInstance(databaseId)
                 DigiPulseViewModel(
-                    repository = DigiPulseRepository(db),
+                    repository = DigiPulseRepository(app),
                     currentUserId = currentUserId,
                     initialTrainerName = initialTrainerName,
                     isGoogleSignedIn = isGoogleSignedIn

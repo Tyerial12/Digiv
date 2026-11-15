@@ -3,6 +3,7 @@ package com.example.data.repository
 import android.content.Context
 import com.example.R
 import com.example.data.model.ChatMessage
+import com.example.data.model.DigiRation
 import com.example.data.model.DigimonCatalog
 import com.example.data.model.DigimonCreature
 import com.example.data.model.FriendConnection
@@ -27,15 +28,21 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.tasks.await
+import org.json.JSONArray
+import org.json.JSONObject
 
 class DigiPulseRepository(private val db: FirebaseFirestore) {
+
+    private var appContext: Context? = null
 
     // CRITICAL: Always initialize with R.string.firestore_database_id
     constructor(context: Context) : this(
         FirebaseFirestore.getInstance(
             context.applicationContext.getString(R.string.firestore_database_id)
         )
-    )
+    ) {
+        this.appContext = context.applicationContext
+    }
 
     private val auth = Firebase.auth
 
@@ -338,20 +345,50 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
         )
     }
 
+    private fun sanitizeDocId(rawId: String, prefix: String = "doc"): String {
+        val cleaned = rawId.trim().replace(Regex("[^a-zA-Z0-9_\\-]"), "_").take(120)
+        return cleaned.ifBlank { "${prefix}_${System.currentTimeMillis()}" }
+    }
+
+    private fun sanitizeStage(stage: String): String =
+        stage.takeIf { it in VALID_STAGES } ?: "Rookie"
+
+    private fun sanitizeAttribute(attribute: String): String =
+        attribute.takeIf { it in VALID_ATTRIBUTES } ?: "Vaccine"
+
+    private fun sanitizeActivityType(activityType: String): String =
+        activityType.takeIf { it in VALID_ACTIVITY_TYPES } ?: "Power Drill"
+
+    private fun sanitizeGrade(grade: String): String =
+        grade.takeIf { it in VALID_GRADES } ?: "CARE"
+
+    private fun sanitizeSeverity(severity: String): String =
+        severity.takeIf { it in VALID_SEVERITIES } ?: "INFO"
+
+    private fun sanitizeDateKey(dateKey: String): String {
+        val trimmed = dateKey.trim().take(10)
+        return if (DATE_KEY_REGEX.matches(trimmed)) {
+            trimmed
+        } else {
+            SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
+        }
+    }
+
     suspend fun createCreature(creature: DigimonCreature): Result<String> = runCatching {
         val uid = requireUserId()
         val docRef = if (creature.id.isNotBlank()) {
-            db.collection("users").document(uid).collection("creatures").document(creature.id)
+            db.collection("users").document(uid).collection("creatures").document(sanitizeDocId(creature.id, "creature"))
         } else {
             db.collection("users").document(uid).collection("creatures").document()
         }
+        val cleanSpeciesName = creature.speciesName.trim().take(50).ifBlank { "Agumon" }
         val payload = mapOf(
             "userId" to uid,
-            "nickname" to creature.nickname.take(40).ifBlank { creature.speciesName },
-            "speciesId" to creature.speciesId.take(40),
-            "speciesName" to creature.speciesName.take(50),
-            "stage" to creature.stage,
-            "attribute" to creature.attribute,
+            "nickname" to creature.nickname.trim().take(40).ifBlank { cleanSpeciesName.take(40) },
+            "speciesId" to creature.speciesId.trim().take(40).ifBlank { "agumon" },
+            "speciesName" to cleanSpeciesName,
+            "stage" to sanitizeStage(creature.stage),
+            "attribute" to sanitizeAttribute(creature.attribute),
             "health" to creature.health.coerceIn(0, 100),
             "stamina" to creature.stamina.coerceIn(0, 100),
             "hunger" to creature.hunger.coerceIn(0, 100),
@@ -363,7 +400,7 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
             "bondLevel" to creature.bondLevel.coerceIn(0, 100),
             "careMistakes" to creature.careMistakes.coerceIn(0, 999),
             "isResting" to creature.isResting,
-            "unlockedForms" to creature.unlockedForms.map { it.take(40) }.take(15),
+            "unlockedForms" to creature.unlockedForms.map { it.trim().take(40) }.filter { it.isNotEmpty() }.take(15),
             "lastUpdatedMs" to creature.lastUpdatedMs.coerceAtLeast(0L),
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
@@ -373,6 +410,15 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
             docRef.id
         } catch (e: CancellationException) {
             throw e
+        } catch (e: FirebaseFirestoreException) {
+            runCatching { docRef.delete().await() }
+            try {
+                docRef.set(payload).await()
+                docRef.id
+            } catch (retryEx: Exception) {
+                handleFirestoreError(retryEx, OperationType.CREATE, docRef.path)
+                throw retryEx
+            }
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.CREATE, docRef.path)
             throw e
@@ -382,13 +428,14 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
     suspend fun updateCreature(creature: DigimonCreature): Result<Unit> = runCatching {
         val uid = requireUserId()
         require(creature.id.isNotBlank()) { "Creature ID must not be blank for update" }
-        val docRef = db.collection("users").document(uid).collection("creatures").document(creature.id)
+        val docRef = db.collection("users").document(uid).collection("creatures").document(sanitizeDocId(creature.id, "creature"))
+        val cleanSpeciesName = creature.speciesName.trim().take(50).ifBlank { "Agumon" }
         val updates = mapOf(
-            "nickname" to creature.nickname.take(40).ifBlank { creature.speciesName },
-            "speciesId" to creature.speciesId.take(40),
-            "speciesName" to creature.speciesName.take(50),
-            "stage" to creature.stage,
-            "attribute" to creature.attribute,
+            "nickname" to creature.nickname.trim().take(40).ifBlank { cleanSpeciesName.take(40) },
+            "speciesId" to creature.speciesId.trim().take(40).ifBlank { "agumon" },
+            "speciesName" to cleanSpeciesName,
+            "stage" to sanitizeStage(creature.stage),
+            "attribute" to sanitizeAttribute(creature.attribute),
             "health" to creature.health.coerceIn(0, 100),
             "stamina" to creature.stamina.coerceIn(0, 100),
             "hunger" to creature.hunger.coerceIn(0, 100),
@@ -400,7 +447,7 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
             "bondLevel" to creature.bondLevel.coerceIn(0, 100),
             "careMistakes" to creature.careMistakes.coerceIn(0, 999),
             "isResting" to creature.isResting,
-            "unlockedForms" to creature.unlockedForms.map { it.take(40) }.take(15),
+            "unlockedForms" to creature.unlockedForms.map { it.trim().take(40) }.filter { it.isNotEmpty() }.take(15),
             "lastUpdatedMs" to creature.lastUpdatedMs.coerceAtLeast(0L),
             "updatedAt" to FieldValue.serverTimestamp()
         )
@@ -408,6 +455,16 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
             docRef.update(updates).await()
         } catch (e: CancellationException) {
             throw e
+        } catch (e: FirebaseFirestoreException) {
+            if (e.code == FirebaseFirestoreException.Code.NOT_FOUND ||
+                e.code == FirebaseFirestoreException.Code.PERMISSION_DENIED
+            ) {
+                runCatching { docRef.delete().await() }
+                createCreature(creature).getOrThrow()
+            } else {
+                handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+                throw e
+            }
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.UPDATE, docRef.path)
             throw e
@@ -417,11 +474,16 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
     suspend fun deleteCreature(creatureId: String): Result<Unit> = runCatching {
         val uid = requireUserId()
         require(creatureId.isNotBlank()) { "Creature ID must not be blank for delete" }
-        val docRef = db.collection("users").document(uid).collection("creatures").document(creatureId)
+        val docRef = db.collection("users").document(uid).collection("creatures").document(sanitizeDocId(creatureId, "creature"))
         try {
             docRef.delete().await()
         } catch (e: CancellationException) {
             throw e
+        } catch (e: FirebaseFirestoreException) {
+            if (e.code != FirebaseFirestoreException.Code.NOT_FOUND) {
+                handleFirestoreError(e, OperationType.DELETE, docRef.path)
+                throw e
+            }
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.DELETE, docRef.path)
             throw e
@@ -666,16 +728,16 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
     suspend fun addTrainingLog(log: TrainingLogEntry): Result<String> = runCatching {
         val uid = requireUserId()
         val colRef = db.collection("users").document(uid).collection("trainingLogs")
-        val docRef = if (log.id.isNotBlank()) colRef.document(log.id) else colRef.document()
+        val docRef = if (log.id.isNotBlank()) colRef.document(sanitizeDocId(log.id, "log")) else colRef.document()
         val payload = mapOf(
             "userId" to uid,
-            "creatureId" to log.creatureId.take(128).ifBlank { "starter" },
-            "creatureName" to log.creatureName.take(50).ifBlank { "Digimon" },
-            "activityType" to log.activityType,
-            "grade" to log.grade,
-            "statDeltaSummary" to log.statDeltaSummary.take(160).ifBlank { "+XP" },
+            "creatureId" to sanitizeDocId(log.creatureId, "starter"),
+            "creatureName" to log.creatureName.trim().take(50).ifBlank { "Digimon" },
+            "activityType" to sanitizeActivityType(log.activityType),
+            "grade" to sanitizeGrade(log.grade),
+            "statDeltaSummary" to log.statDeltaSummary.trim().take(160).ifBlank { "+XP" },
             "xpGained" to log.xpGained.coerceIn(0, 100000),
-            "dateKey" to log.dateKey.take(10),
+            "dateKey" to sanitizeDateKey(log.dateKey),
             "createdAt" to FieldValue.serverTimestamp()
         )
         try {
@@ -692,14 +754,14 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
     suspend fun addNotification(notification: PetNotification): Result<String> = runCatching {
         val uid = requireUserId()
         val colRef = db.collection("users").document(uid).collection("notifications")
-        val docRef = if (notification.id.isNotBlank()) colRef.document(notification.id) else colRef.document()
+        val docRef = if (notification.id.isNotBlank()) colRef.document(sanitizeDocId(notification.id, "notif")) else colRef.document()
         val payload = mapOf(
             "userId" to uid,
-            "creatureId" to notification.creatureId.take(128).ifBlank { "starter" },
-            "creatureName" to notification.creatureName.take(50).ifBlank { "Digimon" },
-            "severity" to notification.severity,
-            "title" to notification.title.take(80).ifBlank { "Status Alert" },
-            "message" to notification.message.take(280).ifBlank { "Check your partner telemetry." },
+            "creatureId" to sanitizeDocId(notification.creatureId, "starter"),
+            "creatureName" to notification.creatureName.trim().take(50).ifBlank { "Digimon" },
+            "severity" to sanitizeSeverity(notification.severity),
+            "title" to notification.title.trim().take(80).ifBlank { "Status Alert" },
+            "message" to notification.message.trim().take(280).ifBlank { "Check your partner telemetry." },
             "isRead" to notification.isRead,
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
@@ -769,40 +831,44 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
             handleFirestoreError(e, OperationType.GET, docRef.path)
             null
         }
+        val fullPayload = mapOf(
+            "userId" to uid,
+            "leagueId" to "global",
+            "trainerName" to entry.trainerName.trim().take(40).ifBlank { "Tamer" },
+            "tamerTitle" to entry.tamerTitle.trim().take(50).ifBlank { "Holo Cadet" },
+            "partnerName" to entry.partnerName.trim().take(50).ifBlank { "Agumon" },
+            "partnerStage" to sanitizeStage(entry.partnerStage),
+            "partnerAttribute" to sanitizeAttribute(entry.partnerAttribute),
+            "totalCombatPower" to entry.totalCombatPower.coerceIn(0, 9999999),
+            "evolutionsUnlocked" to entry.evolutionsUnlocked.coerceIn(1, 500),
+            "trainingStreakDays" to entry.trainingStreakDays.coerceIn(0, 3650),
+            "sparringWins" to entry.sparringWins.coerceIn(0, 999999),
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
         try {
             if (existingSnap != null && existingSnap.exists()) {
-                docRef.update(
-                    mapOf(
-                        "trainerName" to entry.trainerName.take(40).ifBlank { "Tamer" },
-                        "tamerTitle" to entry.tamerTitle.take(50).ifBlank { "Holo Cadet" },
-                        "partnerName" to entry.partnerName.take(50).ifBlank { "Agumon" },
-                        "partnerStage" to entry.partnerStage,
-                        "partnerAttribute" to entry.partnerAttribute,
-                        "totalCombatPower" to entry.totalCombatPower.coerceIn(0, 9999999),
-                        "evolutionsUnlocked" to entry.evolutionsUnlocked.coerceIn(1, 500),
-                        "trainingStreakDays" to entry.trainingStreakDays.coerceIn(0, 3650),
-                        "sparringWins" to entry.sparringWins.coerceIn(0, 999999),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                ).await()
+                try {
+                    docRef.update(
+                        mapOf(
+                            "trainerName" to entry.trainerName.trim().take(40).ifBlank { "Tamer" },
+                            "tamerTitle" to entry.tamerTitle.trim().take(50).ifBlank { "Holo Cadet" },
+                            "partnerName" to entry.partnerName.trim().take(50).ifBlank { "Agumon" },
+                            "partnerStage" to sanitizeStage(entry.partnerStage),
+                            "partnerAttribute" to sanitizeAttribute(entry.partnerAttribute),
+                            "totalCombatPower" to entry.totalCombatPower.coerceIn(0, 9999999),
+                            "evolutionsUnlocked" to entry.evolutionsUnlocked.coerceIn(1, 500),
+                            "trainingStreakDays" to entry.trainingStreakDays.coerceIn(0, 3650),
+                            "sparringWins" to entry.sparringWins.coerceIn(0, 999999),
+                            "updatedAt" to FieldValue.serverTimestamp()
+                        )
+                    ).await()
+                } catch (updateEx: FirebaseFirestoreException) {
+                    runCatching { docRef.delete().await() }
+                    docRef.set(fullPayload).await()
+                }
             } else {
-                docRef.set(
-                    mapOf(
-                        "userId" to uid,
-                        "leagueId" to "global",
-                        "trainerName" to entry.trainerName.take(40).ifBlank { "Tamer" },
-                        "tamerTitle" to entry.tamerTitle.take(50).ifBlank { "Holo Cadet" },
-                        "partnerName" to entry.partnerName.take(50).ifBlank { "Agumon" },
-                        "partnerStage" to entry.partnerStage,
-                        "partnerAttribute" to entry.partnerAttribute,
-                        "totalCombatPower" to entry.totalCombatPower.coerceIn(0, 9999999),
-                        "evolutionsUnlocked" to entry.evolutionsUnlocked.coerceIn(1, 500),
-                        "trainingStreakDays" to entry.trainingStreakDays.coerceIn(0, 3650),
-                        "sparringWins" to entry.sparringWins.coerceIn(0, 999999),
-                        "createdAt" to FieldValue.serverTimestamp(),
-                        "updatedAt" to FieldValue.serverTimestamp()
-                    )
-                ).await()
+                docRef.set(fullPayload).await()
             }
         } catch (e: CancellationException) {
             throw e
@@ -1134,5 +1200,182 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
             handleFirestoreError(e, OperationType.DELETE, docRef.path)
             throw e
         }
+    }
+
+    private fun prefs() = appContext?.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    fun loadDigiCoins(userId: String): Int {
+        val p = prefs() ?: return DigimonCatalog.STARTING_DIGI_COINS
+        return p.getInt("coins_$userId", DigimonCatalog.STARTING_DIGI_COINS).coerceAtLeast(0)
+    }
+
+    fun saveDigiCoins(userId: String, coins: Int) {
+        prefs()?.edit()?.putInt("coins_$userId", coins.coerceAtLeast(0))?.apply()
+    }
+
+    fun loadTammingBerryCount(userId: String): Int {
+        val p = prefs() ?: return 0
+        return p.getInt("berries_$userId", 0).coerceAtLeast(0)
+    }
+
+    fun saveTammingBerryCount(userId: String, count: Int) {
+        prefs()?.edit()?.putInt("berries_$userId", count.coerceAtLeast(0))?.apply()
+    }
+
+    fun loadFoodInventory(userId: String): Map<DigiRation, Int> {
+        val p = prefs() ?: return emptyMap()
+        val raw = p.getString("food_$userId", null) ?: return emptyMap()
+        return runCatching {
+            val json = JSONObject(raw)
+            val result = mutableMapOf<DigiRation, Int>()
+            for (ration in DigiRation.entries) {
+                val qty = json.optInt(ration.name, 0)
+                if (qty > 0) {
+                    result[ration] = qty
+                }
+            }
+            result
+        }.getOrDefault(emptyMap())
+    }
+
+    fun saveFoodInventory(userId: String, inventory: Map<DigiRation, Int>) {
+        val p = prefs() ?: return
+        val json = JSONObject()
+        inventory.forEach { (ration, qty) ->
+            if (qty > 0) json.put(ration.name, qty)
+        }
+        p.edit().putString("food_$userId", json.toString()).apply()
+    }
+
+    fun loadDailyLoginState(userId: String): Pair<String, String?> {
+        val p = prefs() ?: return "" to null
+        val dateKey = p.getString("daily_date_$userId", "").orEmpty()
+        val summary = p.getString("daily_summary_$userId", null)
+        return dateKey to summary
+    }
+
+    fun saveDailyLoginState(userId: String, dateKey: String, summary: String?) {
+        val p = prefs() ?: return
+        p.edit()
+            .putString("daily_date_$userId", dateKey)
+            .putString("daily_summary_$userId", summary)
+            .apply()
+    }
+
+    fun loadLocalCreatures(userId: String): List<DigimonCreature> {
+        val p = prefs() ?: return emptyList()
+        val raw = p.getString("local_creatures_$userId", null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            val list = mutableListOf<DigimonCreature>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val formsArr = obj.optJSONArray("unlockedForms") ?: JSONArray()
+                val forms = mutableListOf<String>()
+                for (j in 0 until formsArr.length()) {
+                    val f = formsArr.optString(j)
+                    if (f.isNotBlank()) forms.add(f)
+                }
+                val skillsArr = obj.optJSONArray("unlockedSkillNodes") ?: JSONArray()
+                val skills = mutableListOf<String>()
+                for (j in 0 until skillsArr.length()) {
+                    val s = skillsArr.optString(j)
+                    if (s.isNotBlank()) skills.add(s)
+                }
+                list.add(
+                    DigimonCreature(
+                        id = obj.optString("id"),
+                        userId = obj.optString("userId", userId),
+                        nickname = obj.optString("nickname", "Agumon"),
+                        speciesId = obj.optString("speciesId", "agumon"),
+                        speciesName = obj.optString("speciesName", "Agumon"),
+                        stage = obj.optString("stage", "Rookie"),
+                        attribute = obj.optString("attribute", "Vaccine"),
+                        health = obj.optInt("health", 100),
+                        stamina = obj.optInt("stamina", 100),
+                        hunger = obj.optInt("hunger", 85),
+                        evolutionProgress = obj.optInt("evolutionProgress", 0),
+                        attack = obj.optInt("attack", 52),
+                        defense = obj.optInt("defense", 42),
+                        speed = obj.optInt("speed", 40),
+                        wisdom = obj.optInt("wisdom", 38),
+                        bondLevel = obj.optInt("bondLevel", 10),
+                        careMistakes = obj.optInt("careMistakes", 0),
+                        isResting = obj.optBoolean("isResting", false),
+                        unlockedForms = forms.ifEmpty { listOf(obj.optString("speciesId", "agumon")) },
+                        unlockedSkillNodes = skills,
+                        nonTrainingBonusStats = obj.optInt("nonTrainingBonusStats", 0),
+                        activeExpeditionId = obj.optString("activeExpeditionId", ""),
+                        expeditionStartMs = obj.optLong("expeditionStartMs", 0L),
+                        expeditionEndMs = obj.optLong("expeditionEndMs", 0L),
+                        completedExpeditionsCount = obj.optInt("completedExpeditionsCount", 0),
+                        lastUpdatedMs = obj.optLong("lastUpdatedMs", System.currentTimeMillis())
+                    )
+                )
+            }
+            list
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveLocalCreatures(userId: String, creatures: List<DigimonCreature>) {
+        val p = prefs() ?: return
+        val arr = JSONArray()
+        for (c in creatures) {
+            val obj = JSONObject()
+            obj.put("id", c.id)
+            obj.put("userId", c.userId)
+            obj.put("nickname", c.nickname)
+            obj.put("speciesId", c.speciesId)
+            obj.put("speciesName", c.speciesName)
+            obj.put("stage", c.stage)
+            obj.put("attribute", c.attribute)
+            obj.put("health", c.health)
+            obj.put("stamina", c.stamina)
+            obj.put("hunger", c.hunger)
+            obj.put("evolutionProgress", c.evolutionProgress)
+            obj.put("attack", c.attack)
+            obj.put("defense", c.defense)
+            obj.put("speed", c.speed)
+            obj.put("wisdom", c.wisdom)
+            obj.put("bondLevel", c.bondLevel)
+            obj.put("careMistakes", c.careMistakes)
+            obj.put("isResting", c.isResting)
+            obj.put("unlockedForms", JSONArray(c.unlockedForms))
+            obj.put("unlockedSkillNodes", JSONArray(c.allUnlockedSkillNodeIds().toList()))
+            obj.put("nonTrainingBonusStats", c.persistedNonTrainingBonusStats())
+            obj.put("activeExpeditionId", c.activeExpeditionId)
+            obj.put("expeditionStartMs", c.expeditionStartMs)
+            obj.put("expeditionEndMs", c.expeditionEndMs)
+            obj.put("completedExpeditionsCount", c.persistedCompletedExpeditions())
+            obj.put("lastUpdatedMs", c.lastUpdatedMs)
+            arr.put(obj)
+        }
+        p.edit().putString("local_creatures_$userId", arr.toString()).apply()
+    }
+
+    fun clearLocalUserProgress(userId: String) {
+        val p = prefs() ?: return
+        p.edit()
+            .remove("coins_$userId")
+            .remove("berries_$userId")
+            .remove("food_$userId")
+            .remove("daily_date_$userId")
+            .remove("daily_summary_$userId")
+            .remove("local_creatures_$userId")
+            .apply()
+    }
+
+    private companion object {
+        const val PREFS_NAME = "digiverse_player_state"
+        val VALID_STAGES = setOf("Rookie", "Champion", "Ultimate", "Mega")
+        val VALID_ATTRIBUTES = setOf("Vaccine", "Data", "Virus", "Free")
+        val VALID_ACTIVITY_TYPES = setOf(
+            "Power Drill", "Speed Drill", "Defense Drill", "Wisdom Drill",
+            "Nutrient Feed", "Medical Care", "Rest Cycle", "Digivolution",
+            "Arena Sparring", "Monster Trade", "Mythic Ascension"
+        )
+        val VALID_GRADES = setOf("S", "A", "B", "C", "CARE", "EVO")
+        val VALID_SEVERITIES = setOf("INFO", "WARNING", "CRITICAL", "EVOLUTION")
+        val DATE_KEY_REGEX = Regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
     }
 }
