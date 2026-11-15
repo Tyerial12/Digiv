@@ -7,6 +7,9 @@ on:
     branches: [ "main", "master" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build-apk:
     runs-on: ubuntu-latest
@@ -59,10 +62,22 @@ jobs:
           fi
 
       - name: Build Debug APK
-        run: gradle :app:assembleDebug --no-daemon
+        run: |
+          gradle :app:assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/DigiVerse-v26.0.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: DigiVerse-v26-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/DigiVerse-v26.0.apk
+
+      - name: Publish APK to GitHub Releases
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v26.0
+          name: "Digi Verse v26.0 APK"
+          body: "Installable Android APK for Digi Verse v26.0 (includes animated monster Sleeping, Eating, Training, and Wild Taming graphics, Daily Login Rewards, and 24h Expedition Ultra Rare drops)."
+          files: app/build/outputs/apk/debug/DigiVerse-v26.0.apk
+          prerelease: false
