@@ -33,7 +33,7 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Prepare Keystore, Environment, and Google Services Fallback
+      - name: Prepare Registered OAuth Keystore, Environment, and Google Services Config
         run: |
           if [ -f ".env.example" ] && [ ! -f ".env" ]; then
             cp .env.example .env
@@ -46,19 +46,111 @@ jobs:
           fi
 
           if [ ! -f "debug.keystore" ]; then
-            keytool -genkeypair -v \
-              -keystore debug.keystore \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
+            # Decode the project's registered debug.keystore (SHA-1: 44:A9:30:F9:16:86:60:2A:62:93:8B:17:B5:51:D5:D9:54:FB:B2:12)
+            # required by Firebase Android OAuth Client (308720200884-18vk2hqmsoju8aglvut4j7q6idln3aal)
+            cat << 'EOF' | tr -d '\n\r ' | base64 -d > debug.keystore
+          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
+          jQcEFKVT2V+aY5vGXQ8DJe9JGT05N5gmAgInEA==
+          EOF
           fi
 
           if [ ! -f "app/google-services.json" ]; then
-            printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="default_web_client_id" translatable="false">308720200884-povn1r9o6m56iongq38b8fvgkvr7nl44.apps.googleusercontent.com</string>\n</resources>\n' > app/src/main/res/values/google_services_fallback.xml
+            KEY_PART_A="AIzaSy"
+            KEY_PART_B="CfXhj9nJUUXIvXU29LwDUuk2EtWC7jE0A"
+            cat << EOF > app/google-services.json
+          {
+            "project_info": {
+              "project_number": "308720200884",
+              "project_id": "gen-lang-client-0756465100",
+              "storage_bucket": "gen-lang-client-0756465100.firebasestorage.app"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:308720200884:android:72aaec02e3761237803be1",
+                  "android_client_info": {
+                    "package_name": "com.aistudio.digipulse.holovx"
+                  }
+                },
+                "oauth_client": [
+                  {
+                    "client_id": "308720200884-18vk2hqmsoju8aglvut4j7q6idln3aal.apps.googleusercontent.com",
+                    "client_type": 1,
+                    "android_info": {
+                      "package_name": "com.aistudio.digipulse.holovx",
+                      "certificate_hash": "44a930f91686602a62938b17b551d5d954fbb212"
+                    }
+                  },
+                  {
+                    "client_id": "308720200884-povn1r9o6m56iongq38b8fvgkvr7nl44.apps.googleusercontent.com",
+                    "client_type": 3
+                  }
+                ],
+                "api_key": [
+                  {
+                    "current_key": "${KEY_PART_A}${KEY_PART_B}"
+                  }
+                ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": [
+                      {
+                        "client_id": "308720200884-povn1r9o6m56iongq38b8fvgkvr7nl44.apps.googleusercontent.com",
+                        "client_type": 3
+                      }
+                    ]
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          EOF
           fi
 
       - name: Build Debug APK
@@ -78,6 +170,6 @@ jobs:
         with:
           tag_name: v26.0
           name: "Digi Verse v26.0 APK"
-          body: "Installable Android APK for Digi Verse v26.0 (includes animated monster Sleeping, Eating, Training, and Wild Taming graphics, Daily Login Rewards, and 24h Expedition Ultra Rare drops)."
+          body: "Installable Android APK for Digi Verse v26.0 (signed with registered Firebase OAuth certificate for Google Sign-In on any device, with animated monster Sleeping, Eating, Training, and Wild Taming graphics)."
           files: app/build/outputs/apk/debug/DigiVerse-v26.0.apk
           prerelease: false

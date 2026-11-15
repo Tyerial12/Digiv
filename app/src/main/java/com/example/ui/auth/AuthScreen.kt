@@ -140,8 +140,7 @@ fun onGoogleSignInClicked(
     onAuthSuccess: () -> Unit,
     onAuthError: (String) -> Unit,
     scope: CoroutineScope,
-    onAuthCancelled: () -> Unit = {},
-    onFallbackToLocalMode: (() -> Unit)? = null
+    onAuthCancelled: () -> Unit = {}
 ) {
     if (Firebase.auth.currentUser != null) {
         onAuthSuccess()
@@ -150,11 +149,7 @@ fun onGoogleSignInClicked(
     val clientId = try {
         context.getString(R.string.default_web_client_id)
     } catch (e: Exception) {
-        if (onFallbackToLocalMode != null) {
-            onFallbackToLocalMode()
-        } else {
-            onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
-        }
+        onAuthError("Google Sign-In configuration missing: default_web_client_id not found")
         return
     }
 
@@ -178,10 +173,11 @@ fun onGoogleSignInClicked(
             Log.w("Auth", "Google Sign-In flow cancelled or dismissed: ${e.message}", e)
             onAuthCancelled()
         } catch (e: NoCredentialException) {
-            Log.w("Auth", "No Google credentials found via GetSignInWithGoogleOption, trying GetGoogleIdOption fallback", e)
+            Log.w("Auth", "No Google credentials via GetSignInWithGoogleOption, trying GetGoogleIdOption(filterByAuthorizedAccounts=false)", e)
             try {
                 val fallbackOption = GetGoogleIdOption.Builder()
                     .setFilterByAuthorizedAccounts(false)
+                    .setAutoSelectEnabled(false)
                     .setServerClientId(clientId)
                     .build()
                 val fallbackReq = GetCredentialRequest.Builder().addCredentialOption(fallbackOption).build()
@@ -192,40 +188,43 @@ fun onGoogleSignInClicked(
                     val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
                     Firebase.auth.signInWithCredential(authCredential).await()
                     onAuthSuccess()
-                } else if (onFallbackToLocalMode != null) {
-                    onFallbackToLocalMode()
                 } else {
-                    onAuthError("No Google account available on this device. Tap 'Play Without Google Login' below.")
+                    onAuthError("Please make sure a Google Account is signed in on this Android device, or tap 'Play Without Google Login'.")
                 }
             } catch (cancelEx: GetCredentialCancellationException) {
                 onAuthCancelled()
             } catch (fallbackEx: NoCredentialException) {
-                if (onFallbackToLocalMode != null) {
-                    onFallbackToLocalMode()
-                } else {
-                    onAuthError("No Google account available on this device. Tap 'Play Without Google Login' below.")
-                }
+                onAuthError("No Google account signed in on this Android device. Add a Google account in Android Settings -> Accounts, or tap 'Play Without Google Login'.")
             } catch (fallbackEx: Exception) {
-                if (onFallbackToLocalMode != null) {
-                    onFallbackToLocalMode()
-                } else {
-                    onAuthError(fallbackEx.localizedMessage ?: "Sign in failed")
-                }
+                onAuthError(fallbackEx.localizedMessage ?: "Google Sign-In failed")
             }
         } catch (e: GetCredentialException) {
-            Log.e("Auth", "Google Sign-In credential error", e)
-            if (onFallbackToLocalMode != null) {
-                onFallbackToLocalMode()
-            } else {
-                onAuthError(e.localizedMessage ?: "Sign in failed")
+            Log.w("Auth", "GetSignInWithGoogleOption threw GetCredentialException, trying GetGoogleIdOption fallback", e)
+            try {
+                val fallbackOption = GetGoogleIdOption.Builder()
+                    .setFilterByAuthorizedAccounts(false)
+                    .setAutoSelectEnabled(false)
+                    .setServerClientId(clientId)
+                    .build()
+                val fallbackReq = GetCredentialRequest.Builder().addCredentialOption(fallbackOption).build()
+                val fallbackRes = credentialManager.getCredential(activityContext, fallbackReq)
+                val credential = fallbackRes.credential
+                if (credential is CustomCredential && credential.type == TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                    val googleIdToken = GoogleIdTokenCredential.createFrom(credential.data).idToken
+                    val authCredential = GoogleAuthProvider.getCredential(googleIdToken, null)
+                    Firebase.auth.signInWithCredential(authCredential).await()
+                    onAuthSuccess()
+                } else {
+                    onAuthError(e.localizedMessage ?: "Sign in failed")
+                }
+            } catch (cancelEx: GetCredentialCancellationException) {
+                onAuthCancelled()
+            } catch (fallbackEx: Exception) {
+                onAuthError(fallbackEx.localizedMessage ?: e.localizedMessage ?: "Sign in failed")
             }
         } catch (e: Exception) {
             Log.e("Auth", "Google Sign-In failed", e)
-            if (onFallbackToLocalMode != null) {
-                onFallbackToLocalMode()
-            } else {
-                onAuthError(e.localizedMessage ?: "Sign in failed")
-            }
+            onAuthError(e.localizedMessage ?: "Sign in failed")
         }
     }
 }
@@ -431,10 +430,6 @@ fun AuthScreen(
                         scope = scope,
                         onAuthCancelled = {
                             isLoading = false
-                        },
-                        onFallbackToLocalMode = {
-                            isLoading = false
-                            onContinueWithoutLogin()
                         }
                     )
                 },
