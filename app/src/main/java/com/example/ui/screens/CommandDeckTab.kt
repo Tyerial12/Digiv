@@ -73,8 +73,10 @@ import com.example.data.model.DigimonCatalog
 import com.example.data.model.DigimonCreature
 import com.example.data.model.EvolutionBranchRequirement
 import com.example.data.model.TrainingLogEntry
+import com.example.ui.components.AnimatedMonsterActionStage
 import com.example.ui.components.DigimonHoloCrestAvatar
 import com.example.ui.components.HoloArcGauge
+import com.example.ui.components.MonsterActionState
 import com.example.ui.components.SegmentedPlasmaBar
 import com.example.ui.components.VisualEvolutionBranchingTreeCard
 import com.example.ui.theme.BioEmeraldHealth
@@ -190,6 +192,7 @@ fun CommandDeckTab(
                         liveBpm = uiState.liveHeartbeatBpm,
                         digiCoins = uiState.digiCoins,
                         nextDigiCoinTickSec = uiState.nextDigiCoinTickSec,
+                        statusBannerMessage = uiState.statusBannerMessage,
                         onOpenDrillsModal = onOpenDrillsModal,
                         onOpenEvolutionMatrix = onOpenEvolutionMatrix,
                         onOpenWildTamingModal = onOpenWildTamingModal,
@@ -457,6 +460,7 @@ private fun ActivePartnerHoloStageCard(
     liveBpm: Int,
     digiCoins: Int,
     nextDigiCoinTickSec: Int,
+    statusBannerMessage: String? = null,
     onOpenDrillsModal: () -> Unit,
     onOpenEvolutionMatrix: () -> Unit,
     onOpenWildTamingModal: () -> Unit = {},
@@ -464,13 +468,22 @@ private fun ActivePartnerHoloStageCard(
     onOpenSkillTreeModal: () -> Unit = {}
 ) {
     val spec = DigimonCatalog.getSpec(creature.speciesId)
-    val monsterImageRes = DigimonCatalog.getMonsterImageRes(creature.speciesId)
     val accent = Color(spec.primaryColorHex)
     val canDigivolve = creature.canEvolveAnyBranch()
-    val gatesMet = canDigivolve
     val nextCoinMins = nextDigiCoinTickSec / 60
     val nextCoinSecs = nextDigiCoinTickSec % 60
     val coinTimerText = "%d:%02d".format(java.util.Locale.US, nextCoinMins, nextCoinSecs)
+
+    val autoDetectedAction = when {
+        creature.isResting -> MonsterActionState.SLEEPING
+        statusBannerMessage?.contains("Fed ", ignoreCase = true) == true -> MonsterActionState.EATING
+        statusBannerMessage?.contains("Drill", ignoreCase = true) == true -> MonsterActionState.TRAINING
+        else -> MonsterActionState.IDLE
+    }
+    var manualActionOverride by remember(creature.id, creature.isResting, statusBannerMessage) {
+        mutableStateOf<MonsterActionState?>(null)
+    }
+    val currentActionState = manualActionOverride ?: autoDetectedAction
 
     Card(
         modifier = Modifier
@@ -481,27 +494,19 @@ private fun ActivePartnerHoloStageCard(
         colors = CardDefaults.cardColors(containerColor = HoloCardElevated)
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            // Top Visual Showcase Banner of the Active Monster
+            // Top Animated Visual Showcase Banner of the Active Monster
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(206.dp)
+                    .height(224.dp)
                     .testTag("active_monster_hero_image_box")
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.img_holo_arena_banner),
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
-                    alpha = 0.35f,
+                    alpha = 0.32f,
                     modifier = Modifier.fillMaxSize()
-                )
-                Image(
-                    painter = painterResource(id = monsterImageRes),
-                    contentDescription = "${creature.nickname} Active Monster Image",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .testTag("active_monster_image")
                 )
                 Box(
                     modifier = Modifier
@@ -509,12 +514,24 @@ private fun ActivePartnerHoloStageCard(
                         .background(
                             Brush.verticalGradient(
                                 colors = listOf(
-                                    CyberVoidBg.copy(alpha = 0.55f),
+                                    CyberVoidBg.copy(alpha = 0.60f),
                                     Color.Transparent,
                                     HoloCardElevated.copy(alpha = 0.96f)
                                 )
                             )
                         )
+                )
+
+                // Animated Monster Action Graphic (Sleeping / Eating / Training / Idle)
+                AnimatedMonsterActionStage(
+                    speciesId = creature.speciesId,
+                    nickname = creature.nickname,
+                    actionState = currentActionState,
+                    spriteSizeDp = 116.dp,
+                    imageTestTag = "active_monster_image",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 18.dp, bottom = 36.dp)
                 )
 
                 // Top Telemetry Overlay Badges (FlowRow so badges never overflow on mobile)
@@ -546,12 +563,12 @@ private fun ActivePartnerHoloStageCard(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 14.dp, vertical = 10.dp)
+                        .padding(horizontal = 14.dp, vertical = 8.dp)
                         .align(Alignment.BottomStart),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = "ACTIVE PARTNER SCAN // ${creature.speciesName.uppercase()}",
+                        text = "ACTIVE PARTNER SCAN // ${creature.speciesName.uppercase()} (${currentActionState.label})",
                         style = MaterialTheme.typography.labelMedium,
                         color = HoloCyanPrimary
                     )
@@ -572,6 +589,51 @@ private fun ActivePartnerHoloStageCard(
                         HoloTagBadge(
                             text = "SKILL: ${spec.signatureMove.uppercase()}",
                             color = EvolutionGoldSecondary
+                        )
+                    }
+                }
+            }
+
+            // Interactive Monster Action Animation Switcher Bar (Idle / Sleeping / Eating / Training)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(CyberVoidBg.copy(alpha = 0.85f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .testTag("monster_action_animation_bar"),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MonsterActionState.entries.forEach { stateMode ->
+                    val selected = currentActionState == stateMode
+                    val modeColor = when (stateMode) {
+                        MonsterActionState.SLEEPING -> PlasmaVioletStamina
+                        MonsterActionState.EATING -> SolarCoralHunger
+                        MonsterActionState.TRAINING -> EvolutionGoldSecondary
+                        MonsterActionState.IDLE -> HoloCyanPrimary
+                    }
+                    Surface(
+                        color = if (selected) modeColor.copy(alpha = 0.25f) else HoloSlateSurface,
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, if (selected) modeColor else modeColor.copy(alpha = 0.35f)),
+                        modifier = Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { manualActionOverride = stateMode }
+                            .testTag("action_anim_${stateMode.name.lowercase()}")
+                    ) {
+                        Text(
+                            text = when (stateMode) {
+                                MonsterActionState.IDLE -> "SCAN"
+                                MonsterActionState.SLEEPING -> "SLEEP Zzz"
+                                MonsterActionState.EATING -> "EAT ♥"
+                                MonsterActionState.TRAINING -> "TRAIN ⚡"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (selected) modeColor else Color.White,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            modifier = Modifier.padding(vertical = 5.dp, horizontal = 4.dp)
                         )
                     }
                 }

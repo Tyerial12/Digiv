@@ -70,7 +70,9 @@ import com.example.data.model.DigimonCatalog
 import com.example.data.model.DigimonCreature
 import com.example.data.model.DrillType
 import com.example.data.model.EvolutionBranchRequirement
+import com.example.ui.components.AnimatedMonsterActionStage
 import com.example.ui.components.DigimonHoloCrestAvatar
+import com.example.ui.components.MonsterActionState
 import com.example.ui.components.VisualEvolutionBranchingTreeCard
 import com.example.ui.theme.BioEmeraldHealth
 import com.example.ui.theme.CyberVoidBg
@@ -320,12 +322,14 @@ fun InteractiveMiniDrillCard(
                 color = EvolutionGoldSecondary
             )
 
-            DigimonHoloCrestAvatar(
+            AnimatedMonsterActionStage(
                 speciesId = creature.speciesId,
-                stage = creature.stage,
-                isResting = false,
-                evolutionReady = true,
-                sizeDp = 88.dp
+                nickname = creature.nickname,
+                actionState = MonsterActionState.TRAINING,
+                spriteSizeDp = 96.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(148.dp)
             )
 
             Text(
@@ -456,6 +460,15 @@ fun CyberFeedBottomSheet(
                 text = "FOOD BAG // FEED ${creature.nickname.uppercase()}",
                 style = MaterialTheme.typography.headlineMedium,
                 color = SolarCoralHunger
+            )
+            AnimatedMonsterActionStage(
+                speciesId = creature.speciesId,
+                nickname = creature.nickname,
+                actionState = MonsterActionState.EATING,
+                spriteSizeDp = 84.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(132.dp)
             )
             Text(
                 text = "Satiety: ${creature.hunger}% • HP: ${creature.health}% • STA: ${creature.stamina}% • Food in Bag: $totalOwned (Must buy/claim food in the Store tab first to feed your pet!)",

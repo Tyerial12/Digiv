@@ -167,5 +167,9 @@ class ExampleRobolectricTest {
         assertFalse("Monster below Level 20 must never show EVO READY! mood", belowLvl20Creature.moodLabel() == "EVO READY!")
         assertTrue("Monster meeting Level 20+ and all stats reports canEvolveAnyBranch()", readyCreature.canEvolveAnyBranch())
         assertEquals("EVO READY!", readyCreature.moodLabel())
+
+        // Verify MonsterActionState animated action modes (Idle, Sleeping, Eating, Training)
+        val actionModes = com.example.ui.components.MonsterActionState.entries.map { it.label }
+        assertEquals(listOf("IDLE", "SLEEPING", "EATING", "TRAINING"), actionModes)
     }
 }

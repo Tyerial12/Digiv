@@ -57,6 +57,7 @@ import com.example.data.model.DigimonCreature
 import com.example.data.model.ExpeditionSpec
 import com.example.data.model.MonsterSkillNode
 import com.example.data.model.WildEncounterState
+import com.example.ui.components.AnimatedWildTamingStage
 import com.example.ui.components.DigimonHoloCrestAvatar
 import com.example.ui.theme.BioEmeraldHealth
 import com.example.ui.theme.CyberVoidBg
@@ -141,6 +142,7 @@ fun WildAndExpeditionsTabContent(
 ) {
     var selectedSection by remember(initialTabIndex) { mutableIntStateOf(initialTabIndex) }
     var showDexBrowser by remember { mutableStateOf(false) }
+    var berryThrowTrigger by remember { mutableIntStateOf(0) }
 
     Column(
         modifier = modifier
@@ -296,6 +298,17 @@ fun WildAndExpeditionsTabContent(
                             modifier = Modifier.padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
+                            // Animated Wild Taming Arena Stage (Berry Throw Trajectory + Capture Rings)
+                            AnimatedWildTamingStage(
+                                speciesId = spec.speciesId,
+                                speciesName = spec.speciesName,
+                                stage = spec.stage,
+                                tameProgress = encounter.tameProgress,
+                                isTamed = encounter.isTamed,
+                                berryThrowTrigger = berryThrowTrigger + encounter.tameProgress,
+                                lastRollResisted = encounter.lastRollOutcomeTitle.contains("RESISTED")
+                            )
+
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
@@ -305,7 +318,7 @@ fun WildAndExpeditionsTabContent(
                                     stage = spec.stage,
                                     isResting = false,
                                     evolutionReady = encounter.isTamed,
-                                    sizeDp = 64.dp
+                                    sizeDp = 56.dp
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
@@ -379,6 +392,7 @@ fun WildAndExpeditionsTabContent(
                                 Button(
                                     onClick = {
                                         if (encounter.isTamed || tammingBerryCount > 0) {
+                                            berryThrowTrigger++
                                             onThrowTammingBerry()
                                         } else {
                                             onGoToStoreTab()
