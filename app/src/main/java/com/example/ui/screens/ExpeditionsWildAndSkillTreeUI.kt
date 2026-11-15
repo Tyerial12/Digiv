@@ -76,11 +76,17 @@ fun WildAndExpeditionsBottomSheet(
     squadCreatures: List<DigimonCreature>,
     digiCoins: Int,
     tammingBerryCount: Int = 0,
+    standardMonsterPartsCount: Int = 0,
+    ultraRareMonsterPartsCount: Int = 0,
     wildEncounter: WildEncounterState?,
     pendingTamedCreature: DigimonCreature?,
     initialTabIndex: Int = 0, // 0 = Wild Taming (100 Monsters), 1 = 10 Expeditions (Up to 24h)
     onScanWildMonster: (String?) -> Unit,
     onThrowTammingBerry: () -> Unit,
+    onBattleWildMonster: () -> Unit = {},
+    onSellStandardPart: (Int) -> Unit = {},
+    onSellUltraRarePart: (Int) -> Unit = {},
+    onSellAllParts: () -> Unit = {},
     onReplaceSquadMonster: (String) -> Unit,
     onDismissPendingTamed: () -> Unit,
     onStartExpedition: (ExpeditionSpec) -> Unit,
@@ -100,11 +106,17 @@ fun WildAndExpeditionsBottomSheet(
             squadCreatures = squadCreatures,
             digiCoins = digiCoins,
             tammingBerryCount = tammingBerryCount,
+            standardMonsterPartsCount = standardMonsterPartsCount,
+            ultraRareMonsterPartsCount = ultraRareMonsterPartsCount,
             wildEncounter = wildEncounter,
             pendingTamedCreature = pendingTamedCreature,
             initialTabIndex = initialTabIndex,
             onScanWildMonster = onScanWildMonster,
             onThrowTammingBerry = onThrowTammingBerry,
+            onBattleWildMonster = onBattleWildMonster,
+            onSellStandardPart = onSellStandardPart,
+            onSellUltraRarePart = onSellUltraRarePart,
+            onSellAllParts = onSellAllParts,
             onReplaceSquadMonster = onReplaceSquadMonster,
             onDismissPendingTamed = onDismissPendingTamed,
             onStartExpedition = onStartExpedition,
@@ -126,11 +138,17 @@ fun WildAndExpeditionsTabContent(
     squadCreatures: List<DigimonCreature>,
     digiCoins: Int,
     tammingBerryCount: Int = 0,
+    standardMonsterPartsCount: Int = 0,
+    ultraRareMonsterPartsCount: Int = 0,
     wildEncounter: WildEncounterState?,
     pendingTamedCreature: DigimonCreature?,
     initialTabIndex: Int = 0, // 0 = Wild Taming (100 Monsters), 1 = 10 Expeditions (Up to 24h)
     onScanWildMonster: (String?) -> Unit,
     onThrowTammingBerry: () -> Unit,
+    onBattleWildMonster: () -> Unit = {},
+    onSellStandardPart: (Int) -> Unit = {},
+    onSellUltraRarePart: (Int) -> Unit = {},
+    onSellAllParts: () -> Unit = {},
     onReplaceSquadMonster: (String) -> Unit,
     onDismissPendingTamed: () -> Unit,
     onStartExpedition: (ExpeditionSpec) -> Unit,
@@ -143,6 +161,12 @@ fun WildAndExpeditionsTabContent(
     var selectedSection by remember(initialTabIndex) { mutableIntStateOf(initialTabIndex) }
     var showDexBrowser by remember { mutableStateOf(false) }
     var berryThrowTrigger by remember { mutableIntStateOf(0) }
+    val nowMs = System.currentTimeMillis()
+    val isRecoveringFrom1Hp = activeCreature?.isRecoveringFrom1Hp(nowMs) == true
+    val totalPartsCount = standardMonsterPartsCount + ultraRareMonsterPartsCount
+    val totalPartsCoinValue =
+        (standardMonsterPartsCount * DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS) +
+            (ultraRareMonsterPartsCount * DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS)
 
     Column(
         modifier = modifier
@@ -151,7 +175,7 @@ fun WildAndExpeditionsTabContent(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-            // Top Switcher: Wild Taming (100 Monsters) vs 10 Expeditions (Up to 24h)
+            // Top Switcher: Wild Taming & Battles (100 Monsters) vs 10 Expeditions (Up to 24h)
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -190,6 +214,34 @@ fun WildAndExpeditionsTabContent(
                     Icon(Icons.Default.Explore, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text("10 EXPEDITIONS (24H)", style = MaterialTheme.typography.labelLarge)
+                }
+            }
+
+            // 1 HP 5-Minute Mandatory Recovery Lockout Warning Banner
+            if (activeCreature != null && isRecoveringFrom1Hp) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = CyberVoidBg),
+                    border = BorderStroke(1.5.dp, VirusCrimsonError),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("wild_1hp_recovery_lockout_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "⚠️ 1 HP RECOVERY LOCKOUT — ${activeCreature.nickname.uppercase()} (${activeCreature.formattedRecoveryRemaining(nowMs)} LEFT)",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = VirusCrimsonError
+                        )
+                        Text(
+                            text = "${activeCreature.nickname} dropped to 1 HP battling a wild monster! Mandatory recovery lasts 5 minutes (${activeCreature.formattedRecoveryRemaining(nowMs)} remaining) before you can battle, train, tame, or do anything with ${activeCreature.nickname} again.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White
+                        )
+                    }
                 }
             }
 
@@ -241,7 +293,7 @@ fun WildAndExpeditionsTabContent(
             }
 
             if (selectedSection == 0) {
-                // SECTION 0: WILD MONSTER TAMING WITH TAMMING BERRIES (2 COINS / RANDOM SUCCESS RATE)
+                // SECTION 0: WILD MONSTER TAMING OR BATTLING FOR MONSTER PARTS
                 Card(
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(containerColor = HoloCardElevated),
@@ -258,7 +310,7 @@ fun WildAndExpeditionsTabContent(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             Text(
-                                text = "WILD TAMING • 100 MONSTERS",
+                                text = "WILD TAMING & PART BATTLES • 100 MONSTERS",
                                 style = MaterialTheme.typography.headlineMedium,
                                 color = BioEmeraldHealth
                             )
@@ -267,7 +319,7 @@ fun WildAndExpeditionsTabContent(
                                 shape = RoundedCornerShape(50)
                             ) {
                                 Text(
-                                    text = "BERRIES IN BAG: $tammingBerryCount • SQUAD ${squadCreatures.size}/4",
+                                    text = "BERRIES: $tammingBerryCount • PARTS: $totalPartsCount • SQUAD ${squadCreatures.size}/4",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = EvolutionGoldSecondary,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -275,7 +327,7 @@ fun WildAndExpeditionsTabContent(
                             }
                         }
                         Text(
-                            text = "Buy Tamming Berries in the Store tab (2 DigiCoins each) and throw them here with randomized taming success rates!",
+                            text = "Throw Tamming Berries (2 Coins) to capture wild monsters, OR Battle wild monsters you don't want to tame for Monster Parts (Standard Parts sell for 2 DigiCoins, Ultra Rare Wild Parts sell for 5 DigiCoins! Watch out: dropping to 1 HP triggers a 5-min recovery!).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -291,13 +343,37 @@ fun WildAndExpeditionsTabContent(
                     Card(
                         shape = RoundedCornerShape(18.dp),
                         colors = CardDefaults.cardColors(containerColor = CyberVoidBg),
-                        border = BorderStroke(1.5.dp, BioEmeraldHealth),
+                        border = BorderStroke(
+                            width = 1.5.dp,
+                            color = if (encounter.isUltraRareWild) EvolutionGoldSecondary else BioEmeraldHealth
+                        ),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(
                             modifier = Modifier.padding(14.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
+                            // Rarity & Monster Part Value Badge
+                            Surface(
+                                color = (if (encounter.isUltraRareWild) EvolutionGoldSecondary else HoloCyanPrimary).copy(alpha = 0.18f),
+                                shape = RoundedCornerShape(50),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (encounter.isUltraRareWild) EvolutionGoldSecondary else HoloCyanPrimary
+                                )
+                            ) {
+                                Text(
+                                    text = if (encounter.isUltraRareWild) {
+                                        "★ ULTRA RARE WILD MONSTER • DROPS ULTRA RARE PARTS (5 DIGICOINS EACH)"
+                                    } else {
+                                        "STANDARD WILD MONSTER • DROPS MONSTER PARTS (2 DIGICOINS EACH)"
+                                    },
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = if (encounter.isUltraRareWild) EvolutionGoldSecondary else HoloCyanPrimary,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                )
+                            }
+
                             // Animated Wild Taming Arena Stage (Berry Throw Trajectory + Capture Rings)
                             AnimatedWildTamingStage(
                                 speciesId = spec.speciesId,
@@ -317,14 +393,18 @@ fun WildAndExpeditionsTabContent(
                                     speciesId = spec.speciesId,
                                     stage = spec.stage,
                                     isResting = false,
-                                    evolutionReady = encounter.isTamed,
+                                    evolutionReady = encounter.isTamed || encounter.isUltraRareWild,
                                     sizeDp = 56.dp
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = "WILD ${spec.speciesName.uppercase()}",
+                                        text = if (encounter.isUltraRareWild) {
+                                            "★ ULTRA RARE ${spec.speciesName.uppercase()}"
+                                        } else {
+                                            "WILD ${spec.speciesName.uppercase()}"
+                                        },
                                         style = MaterialTheme.typography.headlineMedium,
-                                        color = Color.White
+                                        color = if (encounter.isUltraRareWild) EvolutionGoldSecondary else Color.White
                                     )
                                     Text(
                                         text = "${spec.stage} • ${spec.attribute} • Move: ${spec.signatureMove}",
@@ -336,6 +416,13 @@ fun WildAndExpeditionsTabContent(
                                         style = MaterialTheme.typography.labelSmall,
                                         color = EvolutionGoldSecondary
                                     )
+                                    if (activeCreature != null) {
+                                        Text(
+                                            text = "Partner: ${activeCreature.nickname} • HP ${activeCreature.health}/100${if (isRecoveringFrom1Hp) " (RECOVERING ${activeCreature.formattedRecoveryRemaining(nowMs)})" else ""}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (activeCreature.health <= 25 || isRecoveringFrom1Hp) VirusCrimsonError else BioEmeraldHealth
+                                        )
+                                    }
                                 }
                             }
 
@@ -398,6 +485,7 @@ fun WildAndExpeditionsTabContent(
                                             onGoToStoreTab()
                                         }
                                     },
+                                    enabled = !isRecoveringFrom1Hp,
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = if (tammingBerryCount > 0 || encounter.isTamed) BioEmeraldHealth else EvolutionGoldSecondary,
                                         contentColor = CyberVoidBg
@@ -411,6 +499,8 @@ fun WildAndExpeditionsTabContent(
                                 ) {
                                     Text(
                                         text = when {
+                                            isRecoveringFrom1Hp && activeCreature != null ->
+                                                "RECOVERING (${activeCreature.formattedRecoveryRemaining(nowMs)})"
                                             encounter.isTamed -> "SCAN NEXT WILD"
                                             tammingBerryCount > 0 -> "THROW BERRY ($tammingBerryCount IN BAG)"
                                             else -> "BUY BERRIES IN STORE"
@@ -436,6 +526,146 @@ fun WildAndExpeditionsTabContent(
                                         color = HoloCyanPrimary
                                     )
                                 }
+                            }
+
+                            // Battle Wild Monster for Monster Parts Button (When you don't want to tame it)
+                            Button(
+                                onClick = onBattleWildMonster,
+                                enabled = activeCreature != null && !isRecoveringFrom1Hp,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (encounter.isUltraRareWild) EvolutionGoldSecondary else SolarCoralHunger,
+                                    contentColor = CyberVoidBg
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .testTag("battle_wild_monster_for_parts_button")
+                            ) {
+                                Text(
+                                    text = when {
+                                        isRecoveringFrom1Hp && activeCreature != null ->
+                                            "1 HP RECOVERY LOCKOUT — WAIT ${activeCreature.formattedRecoveryRemaining(nowMs)} (5M RECOVERY)"
+                                        encounter.isUltraRareWild ->
+                                            "⚔️ BATTLE ULTRA RARE WILD FOR PARTS (5 DIGICOINS/PART)"
+                                        else ->
+                                            "⚔️ BATTLE WILD MONSTER FOR PARTS (2 DIGICOINS/PART)"
+                                    },
+                                    style = MaterialTheme.typography.labelLarge,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Monster Parts Salvage & Sell Card (Sell Standard Parts for 2 Coins, Ultra Rare Parts for 5 Coins)
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = HoloCardElevated),
+                    border = BorderStroke(1.2.dp, EvolutionGoldSecondary.copy(alpha = 0.7f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("wild_monster_parts_salvage_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FlowRow(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text(
+                                text = "MONSTER PARTS SALVAGE BAG",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = EvolutionGoldSecondary
+                            )
+                            Surface(
+                                color = EvolutionGoldSecondary.copy(alpha = 0.18f),
+                                shape = RoundedCornerShape(50)
+                            ) {
+                                Text(
+                                    text = "VALUE: $totalPartsCoinValue DIGICOINS",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = EvolutionGoldSecondary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "Standard Monster Parts: $standardMonsterPartsCount (${DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS} DigiCoins each) • Ultra Rare Monster Parts: $ultraRareMonsterPartsCount (${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} DigiCoins each)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            FilledTonalButton(
+                                onClick = { onSellStandardPart(1) },
+                                enabled = standardMonsterPartsCount > 0,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = HoloCyanPrimary.copy(alpha = 0.2f),
+                                    contentColor = HoloCyanPrimary
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 44.dp)
+                                    .testTag("wild_sell_standard_part_button")
+                            ) {
+                                Text(
+                                    text = "SELL STD (+2 COINS)",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+
+                            FilledTonalButton(
+                                onClick = { onSellUltraRarePart(1) },
+                                enabled = ultraRareMonsterPartsCount > 0,
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = EvolutionGoldSecondary.copy(alpha = 0.22f),
+                                    contentColor = EvolutionGoldSecondary
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .heightIn(min = 44.dp)
+                                    .testTag("wild_sell_ultra_rare_part_button")
+                            ) {
+                                Text(
+                                    text = "SELL ULTRA (+5 COINS)",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+
+                        if (totalPartsCount > 0) {
+                            Button(
+                                onClick = onSellAllParts,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = BioEmeraldHealth,
+                                    contentColor = CyberVoidBg
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 44.dp)
+                                    .testTag("wild_sell_all_parts_button")
+                            ) {
+                                Text(
+                                    text = "SELL ALL $totalPartsCount MONSTER PARTS (+$totalPartsCoinValue DIGICOINS)",
+                                    style = MaterialTheme.typography.labelLarge
+                                )
                             }
                         }
                     }

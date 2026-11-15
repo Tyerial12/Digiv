@@ -156,20 +156,20 @@ jobs:
       - name: Build Debug APK
         run: |
           gradle :app:assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/DigiVerse-v27.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/DigiVerse-v28.0.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DigiVerse-v27-debug-apk
-          path: app/build/outputs/apk/debug/DigiVerse-v27.0.apk
+          name: DigiVerse-v28-debug-apk
+          path: app/build/outputs/apk/debug/DigiVerse-v28.0.apk
 
       - name: Publish APK to GitHub Releases
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v27.0
-          name: "Digi Verse v27.0 APK"
-          body: "Installable Android APK for Digi Verse v27.0 (signed with registered Firebase OAuth certificate for Google Sign-In on any device, with animated monster Sleeping, Eating, Training, and Wild Taming graphics)."
-          files: app/build/outputs/apk/debug/DigiVerse-v27.0.apk
+          tag_name: v28.0
+          name: "Digi Verse v28.0 APK"
+          body: "Installable Android APK for Digi Verse v28.0 (includes 24-Hour Offline Auto-Training for 100 DigiCoins when app is closed, Wild Monster Battles for Monster Parts selling for 2 DigiCoins or 5 DigiCoins for Ultra Rare parts, and 1 HP 5-Minute Recovery Lockout)."
+          files: app/build/outputs/apk/debug/DigiVerse-v28.0.apk
           prerelease: false

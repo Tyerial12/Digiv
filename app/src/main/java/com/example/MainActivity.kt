@@ -666,11 +666,17 @@ fun AuthenticatedHoloDashboard(
                             squadCreatures = uiState.creatures,
                             digiCoins = uiState.digiCoins,
                             tammingBerryCount = uiState.tammingBerryCount,
+                            standardMonsterPartsCount = uiState.standardMonsterPartsCount,
+                            ultraRareMonsterPartsCount = uiState.ultraRareMonsterPartsCount,
                             wildEncounter = uiState.wildEncounter,
                             pendingTamedCreature = uiState.pendingTamedCreature,
                             initialTabIndex = wildExpeditionsInitialTab,
                             onScanWildMonster = viewModel::scanWildMonster,
                             onThrowTammingBerry = viewModel::throwTammingBerry,
+                            onBattleWildMonster = viewModel::battleWildMonster,
+                            onSellStandardPart = viewModel::sellStandardMonsterParts,
+                            onSellUltraRarePart = viewModel::sellUltraRareMonsterParts,
+                            onSellAllParts = viewModel::sellAllMonsterParts,
                             onReplaceSquadMonster = viewModel::replaceSquadMonsterWithTamed,
                             onDismissPendingTamed = viewModel::dismissPendingTamedCreature,
                             onStartExpedition = viewModel::startExpedition,
@@ -685,7 +691,8 @@ fun AuthenticatedHoloDashboard(
                             nextDigiCoinTickSec = uiState.nextDigiCoinTickSec,
                             onCompleteDrill = { drill, score ->
                                 viewModel.completeTrainingDrill(drill, score)
-                            }
+                            },
+                            onStart24hOfflineTraining = viewModel::start24hOfflineTraining
                         )
                         DigiPulseTab.STORE -> StoreHubTab(
                             activeCreature = uiState.activeCreature,
@@ -693,12 +700,17 @@ fun AuthenticatedHoloDashboard(
                             nextDigiCoinTickSec = uiState.nextDigiCoinTickSec,
                             foodInventory = uiState.foodInventory,
                             tammingBerryCount = uiState.tammingBerryCount,
+                            standardMonsterPartsCount = uiState.standardMonsterPartsCount,
+                            ultraRareMonsterPartsCount = uiState.ultraRareMonsterPartsCount,
                             dailyLoginClaimedToday = uiState.dailyLoginClaimedToday,
                             dailyLoginStreakDays = uiState.dailyLoginStreakDays,
                             lastDailyLoginRewardText = uiState.lastDailyLoginRewardText,
                             onClaimDailyLoginReward = viewModel::claimDailyLoginReward,
                             onBuyFood = viewModel::buyFoodInStore,
                             onBuyTammingBerries = viewModel::buyTammingBerriesInStore,
+                            onSellStandardPart = viewModel::sellStandardMonsterParts,
+                            onSellUltraRarePart = viewModel::sellUltraRareMonsterParts,
+                            onSellAllParts = viewModel::sellAllMonsterParts,
                             onFeedCreatureFromBag = viewModel::feedCreature,
                             onOpenWildTamingModal = {
                                 wildExpeditionsInitialTab = 0
@@ -779,11 +791,17 @@ fun AuthenticatedHoloDashboard(
             squadCreatures = uiState.creatures,
             digiCoins = uiState.digiCoins,
             tammingBerryCount = uiState.tammingBerryCount,
+            standardMonsterPartsCount = uiState.standardMonsterPartsCount,
+            ultraRareMonsterPartsCount = uiState.ultraRareMonsterPartsCount,
             wildEncounter = uiState.wildEncounter,
             pendingTamedCreature = uiState.pendingTamedCreature,
             initialTabIndex = wildExpeditionsInitialTab,
             onScanWildMonster = viewModel::scanWildMonster,
             onThrowTammingBerry = viewModel::throwTammingBerry,
+            onBattleWildMonster = viewModel::battleWildMonster,
+            onSellStandardPart = viewModel::sellStandardMonsterParts,
+            onSellUltraRarePart = viewModel::sellUltraRareMonsterParts,
+            onSellAllParts = viewModel::sellAllMonsterParts,
             onReplaceSquadMonster = viewModel::replaceSquadMonsterWithTamed,
             onDismissPendingTamed = viewModel::dismissPendingTamedCreature,
             onStartExpedition = viewModel::startExpedition,

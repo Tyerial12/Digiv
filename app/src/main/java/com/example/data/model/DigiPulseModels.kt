@@ -34,13 +34,20 @@ data class DigimonCreature(
     val expeditionStartMs: Long = 0L,
     val expeditionEndMs: Long = 0L,
     val completedExpeditionsCount: Int = 0,
+    val offlineTrainingEndMs: Long = 0L,
+    val offlineTrainingLastTickMs: Long = 0L,
+    val recoveryEndsAtMs: Long = 0L,
     val lastUpdatedMs: Long = System.currentTimeMillis(),
     @ServerTimestamp val createdAt: Timestamp? = null,
     @ServerTimestamp val updatedAt: Timestamp? = null
 ) {
     fun unlockedEvolutionFormIds(): List<String> {
         return unlockedForms.filter {
-            !it.startsWith("sk:") && !it.startsWith("bn:") && !it.startsWith("ex:")
+            !it.startsWith("sk:") &&
+                !it.startsWith("bn:") &&
+                !it.startsWith("ex:") &&
+                !it.startsWith("ot:") &&
+                !it.startsWith("rc:")
         }.distinct()
     }
 
@@ -83,13 +90,75 @@ data class DigimonCreature(
         return maxOf(completedExpeditionsCount, fromForms)
     }
 
+    fun persistedOfflineTrainingEndMs(): Long {
+        val fromForms = unlockedForms
+            .firstOrNull { it.startsWith("ot:") }
+            ?.removePrefix("ot:")
+            ?.split(":")
+            ?.firstOrNull()
+            ?.toLongOrNull()
+            ?.let { it * 1000L } ?: 0L
+        return maxOf(offlineTrainingEndMs, fromForms)
+    }
+
+    fun persistedOfflineTrainingLastTickMs(): Long {
+        val fromForms = unlockedForms
+            .firstOrNull { it.startsWith("ot:") }
+            ?.removePrefix("ot:")
+            ?.split(":")
+            ?.getOrNull(1)
+            ?.toLongOrNull()
+            ?.let { it * 1000L } ?: 0L
+        return maxOf(offlineTrainingLastTickMs, fromForms)
+    }
+
+    fun persistedRecoveryEndsAtMs(): Long {
+        val fromForms = unlockedForms
+            .firstOrNull { it.startsWith("rc:") }
+            ?.removePrefix("rc:")
+            ?.toLongOrNull()
+            ?.let { it * 1000L } ?: 0L
+        return maxOf(recoveryEndsAtMs, fromForms)
+    }
+
+    fun isInOfflineTraining(nowMs: Long = System.currentTimeMillis()): Boolean =
+        persistedOfflineTrainingEndMs() > nowMs
+
+    fun remainingOfflineTrainingSec(nowMs: Long = System.currentTimeMillis()): Long =
+        ((persistedOfflineTrainingEndMs() - nowMs) / 1000L).coerceAtLeast(0L)
+
+    fun formattedOfflineTrainingRemaining(nowMs: Long = System.currentTimeMillis()): String {
+        val remSec = remainingOfflineTrainingSec(nowMs)
+        if (remSec <= 0L) return "0m 00s"
+        val hours = remSec / 3600L
+        val mins = (remSec % 3600L) / 60L
+        val secs = remSec % 60L
+        return if (hours > 0L) "${hours}h ${mins}m ${secs}s" else "${mins}m ${secs}s"
+    }
+
+    fun isRecoveringFrom1Hp(nowMs: Long = System.currentTimeMillis()): Boolean =
+        persistedRecoveryEndsAtMs() > nowMs
+
+    fun remainingRecoverySec(nowMs: Long = System.currentTimeMillis()): Long =
+        ((persistedRecoveryEndsAtMs() - nowMs) / 1000L).coerceAtLeast(0L)
+
+    fun formattedRecoveryRemaining(nowMs: Long = System.currentTimeMillis()): String {
+        val remSec = remainingRecoverySec(nowMs)
+        val mins = remSec / 60L
+        val secs = remSec % 60L
+        return "%d:%02d".format(java.util.Locale.US, mins, secs)
+    }
+
     fun withUpdatedMetadataInForms(
         newSkillNodes: Collection<String> = allUnlockedSkillNodeIds(),
         newBonusStats: Int = persistedNonTrainingBonusStats(),
         newExpeditionsCount: Int = persistedCompletedExpeditions(),
+        newOfflineTrainEndMs: Long = persistedOfflineTrainingEndMs(),
+        newOfflineTrainTickMs: Long = persistedOfflineTrainingLastTickMs(),
+        newRecoveryEndsMs: Long = persistedRecoveryEndsAtMs(),
         targetSpeciesOverride: String = speciesId
     ): List<String> {
-        val baseEvolutionForms = unlockedEvolutionFormIds().take(6).map { it.take(40) }
+        val baseEvolutionForms = unlockedEvolutionFormIds().take(5).map { it.take(40) }
         val skillTags = newSkillNodes
             .map { id ->
                 val idx = id.indexOf("_node_")
@@ -101,6 +170,15 @@ data class DigimonCreature(
         val metaTags = buildList {
             if (newBonusStats > 0) add("bn:$newBonusStats".take(40))
             if (newExpeditionsCount > 0) add("ex:$newExpeditionsCount".take(40))
+            if (newOfflineTrainEndMs > 0L) {
+                val endSec = newOfflineTrainEndMs / 1000L
+                val tickSec = (newOfflineTrainTickMs.takeIf { it > 0L } ?: newOfflineTrainEndMs) / 1000L
+                add("ot:$endSec:$tickSec".take(40))
+            }
+            if (newRecoveryEndsMs > 0L) {
+                val recSec = newRecoveryEndsMs / 1000L
+                add("rc:$recSec".take(40))
+            }
         }
         return (baseEvolutionForms + skillTags + metaTags).take(15)
     }
@@ -136,7 +214,7 @@ data class DigimonCreature(
         return spec.evolutionBranches.any { it.isStatsAndSyncMetBy(this) }
     }
 
-    fun canEnterCryoRest(): Boolean = !isResting && stamina <= 50
+    fun canEnterCryoRest(): Boolean = !isResting && stamina <= 50 && !isRecoveringFrom1Hp()
 
     fun isOnExpedition(): Boolean = activeExpeditionId.isNotBlank() && expeditionEndMs > 0L
 
@@ -175,6 +253,8 @@ data class DigimonCreature(
     }
 
     fun moodLabel(): String = when {
+        isRecoveringFrom1Hp() -> "1 HP RECOVERING (${formattedRecoveryRemaining()})"
+        isInOfflineTraining() -> "24H AUTO-TRAIN (${formattedOfflineTrainingRemaining()})"
         health < 35 -> "CRITICAL DAMAGE"
         hunger < 25 -> "NEEDS FOOD!"
         isResting -> "CRYO-RESTING (${stamina}%/100%)"
@@ -612,6 +692,12 @@ object DigimonCatalog {
     const val MAX_SQUAD_SIZE = 4
     const val STARTING_DIGI_COINS = 60
     const val TRAINING_DRILL_COIN_COST = 10
+    const val OFFLINE_TRAINING_24H_COIN_COST = 100
+    const val OFFLINE_TRAINING_24H_DURATION_MS = 24L * 60L * 60L * 1000L
+    const val OFFLINE_TRAINING_CYCLE_MS = 15L * 60L * 1000L // +1 Training Cycle every 15 mins (up to 96 cycles in 24h)
+    const val BATTLE_RECOVERY_5MIN_DURATION_MS = 5L * 60L * 1000L // 5-minute mandatory recovery when reaching 1 HP
+    const val STANDARD_MONSTER_PART_SELL_COINS = 2
+    const val ULTRA_RARE_MONSTER_PART_SELL_COINS = 5
     const val PAID_FEED_COIN_COST = 5
     const val TAMMING_BERRY_COIN_COST = 2
     const val DIGI_COIN_INTERVAL_SEC = 300 // 5 minutes per +5 DigiCoins

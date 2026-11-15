@@ -82,6 +82,8 @@ data class DashboardUiState(
     val pendingTamedCreature: DigimonCreature? = null,
     val foodInventory: Map<DigiRation, Int> = emptyMap(),
     val tammingBerryCount: Int = 0,
+    val standardMonsterPartsCount: Int = 0,
+    val ultraRareMonsterPartsCount: Int = 0,
     val dailyLoginClaimedToday: Boolean = false,
     val dailyLoginStreakDays: Int = 1,
     val lastDailyLoginRewardText: String? = null,
@@ -99,6 +101,13 @@ data class DashboardUiState(
 
     val totalFoodOwned: Int
         get() = foodInventory.values.sum()
+
+    val totalMonsterPartsCount: Int
+        get() = standardMonsterPartsCount + ultraRareMonsterPartsCount
+
+    val totalMonsterPartsCoinValue: Int
+        get() = (standardMonsterPartsCount * DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS) +
+            (ultraRareMonsterPartsCount * DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS)
 
     fun getFoodCount(ration: DigiRation): Int = foodInventory[ration] ?: 0
 }
@@ -141,6 +150,8 @@ class DigiPulseViewModel(
     private val _pendingTamedCreature = MutableStateFlow<DigimonCreature?>(null)
     private val _foodInventory = MutableStateFlow<Map<DigiRation, Int>>(emptyMap())
     private val _tammingBerryCount = MutableStateFlow(0)
+    private val _standardMonsterPartsCount = MutableStateFlow(0)
+    private val _ultraRareMonsterPartsCount = MutableStateFlow(0)
     private val _lastClaimedDailyLoginDateKey = MutableStateFlow("")
     private val _lastDailyLoginRewardSummary = MutableStateFlow<String?>(null)
 
@@ -373,16 +384,20 @@ class DigiPulseViewModel(
                 Tuple4(coins, coinSec, wild, pendingTamed)
             },
             _foodInventory,
-            _tammingBerryCount,
+            combine(_tammingBerryCount, _standardMonsterPartsCount, _ultraRareMonsterPartsCount) { berries, stdParts, ultraParts ->
+                Triple(berries, stdParts, ultraParts)
+            },
             _lastClaimedDailyLoginDateKey,
             _lastDailyLoginRewardSummary
-        ) { coinWild, foodInv, berries, claimedDateKey, claimSummary ->
-            Tuple5(coinWild, foodInv, berries, claimedDateKey, claimSummary)
+        ) { coinWild, foodInv, berryAndParts, claimedDateKey, claimSummary ->
+            Tuple5(coinWild, foodInv, berryAndParts, claimedDateKey, claimSummary)
         }
     ) { cloud, optimistic, meta1, meta2, storeAndCoinMeta ->
         val coinMeta = storeAndCoinMeta.first
         val foodInv = storeAndCoinMeta.second
-        val berryCount = storeAndCoinMeta.third
+        val berryCount = storeAndCoinMeta.third.first
+        val stdPartsCount = storeAndCoinMeta.third.second
+        val ultraPartsCount = storeAndCoinMeta.third.third
         val claimedDateKey = storeAndCoinMeta.fourth
         val claimSummary = storeAndCoinMeta.fifth
         val rawCreatures = if (optimistic.isResetting) {
@@ -397,13 +412,27 @@ class DigiPulseViewModel(
                 val combinedSkills = (opt.allUnlockedSkillNodeIds() + (cld?.allUnlockedSkillNodeIds() ?: emptySet())).toList()
                 val combinedBonus = maxOf(opt.persistedNonTrainingBonusStats(), cld?.persistedNonTrainingBonusStats() ?: 0)
                 val combinedExpCount = maxOf(opt.persistedCompletedExpeditions(), cld?.persistedCompletedExpeditions() ?: 0)
+                val resolvedOfflineEnd = if (opt.lastUpdatedMs >= (cld?.lastUpdatedMs ?: 0L)) {
+                    opt.persistedOfflineTrainingEndMs()
+                } else {
+                    cld?.persistedOfflineTrainingEndMs() ?: opt.persistedOfflineTrainingEndMs()
+                }
+                val resolvedOfflineTick = maxOf(opt.persistedOfflineTrainingLastTickMs(), cld?.persistedOfflineTrainingLastTickMs() ?: 0L)
+                val resolvedRecoveryEnd = if (opt.lastUpdatedMs >= (cld?.lastUpdatedMs ?: 0L)) {
+                    opt.persistedRecoveryEndsAtMs()
+                } else {
+                    cld?.persistedRecoveryEndsAtMs() ?: opt.persistedRecoveryEndsAtMs()
+                }
                 basePicked.copy(
                     unlockedSkillNodes = combinedSkills,
                     nonTrainingBonusStats = combinedBonus,
                     activeExpeditionId = opt.activeExpeditionId.ifBlank { cld?.activeExpeditionId.orEmpty() },
                     expeditionStartMs = if (opt.activeExpeditionId.isNotBlank()) opt.expeditionStartMs else (cld?.expeditionStartMs ?: 0L),
                     expeditionEndMs = if (opt.activeExpeditionId.isNotBlank()) opt.expeditionEndMs else (cld?.expeditionEndMs ?: 0L),
-                    completedExpeditionsCount = combinedExpCount
+                    completedExpeditionsCount = combinedExpCount,
+                    offlineTrainingEndMs = resolvedOfflineEnd,
+                    offlineTrainingLastTickMs = resolvedOfflineTick,
+                    recoveryEndsAtMs = resolvedRecoveryEnd
                 )
             }
             val extraCloud = cloudFiltered
@@ -412,7 +441,10 @@ class DigiPulseViewModel(
                     cld.copy(
                         unlockedSkillNodes = cld.allUnlockedSkillNodeIds().toList(),
                         nonTrainingBonusStats = cld.persistedNonTrainingBonusStats(),
-                        completedExpeditionsCount = cld.persistedCompletedExpeditions()
+                        completedExpeditionsCount = cld.persistedCompletedExpeditions(),
+                        offlineTrainingEndMs = cld.persistedOfflineTrainingEndMs(),
+                        offlineTrainingLastTickMs = cld.persistedOfflineTrainingLastTickMs(),
+                        recoveryEndsAtMs = cld.persistedRecoveryEndsAtMs()
                     )
                 }
             merged + extraCloud
@@ -421,7 +453,10 @@ class DigiPulseViewModel(
                 cld.copy(
                     unlockedSkillNodes = cld.allUnlockedSkillNodeIds().toList(),
                     nonTrainingBonusStats = cld.persistedNonTrainingBonusStats(),
-                    completedExpeditionsCount = cld.persistedCompletedExpeditions()
+                    completedExpeditionsCount = cld.persistedCompletedExpeditions(),
+                    offlineTrainingEndMs = cld.persistedOfflineTrainingEndMs(),
+                    offlineTrainingLastTickMs = cld.persistedOfflineTrainingLastTickMs(),
+                    recoveryEndsAtMs = cld.persistedRecoveryEndsAtMs()
                 )
             }
         }
@@ -531,6 +566,8 @@ class DigiPulseViewModel(
             pendingTamedCreature = coinMeta.fourth,
             foodInventory = foodInv,
             tammingBerryCount = berryCount,
+            standardMonsterPartsCount = stdPartsCount,
+            ultraRareMonsterPartsCount = ultraPartsCount,
             dailyLoginClaimedToday = isDailyClaimedToday,
             dailyLoginStreakDays = streakDays,
             lastDailyLoginRewardText = resolvedDailyRewardText,
@@ -550,11 +587,14 @@ class DigiPulseViewModel(
     init {
         val savedCoins = repository.loadDigiCoins(currentUserId)
         val savedBerries = repository.loadTammingBerryCount(currentUserId)
+        val (savedStdParts, savedUltraParts) = repository.loadMonsterPartsCounts(currentUserId)
         val savedFood = repository.loadFoodInventory(currentUserId)
         val (savedDailyDate, savedDailySummary) = repository.loadDailyLoginState(currentUserId)
         val savedLocalCreatures = repository.loadLocalCreatures(currentUserId)
         _digiCoins.value = savedCoins
         _tammingBerryCount.value = savedBerries
+        _standardMonsterPartsCount.value = savedStdParts
+        _ultraRareMonsterPartsCount.value = savedUltraParts
         _foodInventory.value = savedFood
         _lastClaimedDailyLoginDateKey.value = savedDailyDate
         _lastDailyLoginRewardSummary.value = savedDailySummary
@@ -584,6 +624,14 @@ class DigiPulseViewModel(
                     repository.saveTammingBerryCount(currentUserId, count)
                 }
             }
+        }
+        viewModelScope.launch {
+            combine(_standardMonsterPartsCount, _ultraRareMonsterPartsCount) { s, u -> s to u }
+                .collect { (stdParts, ultraParts) ->
+                    if (!_isResetting.value) {
+                        repository.saveMonsterPartsCounts(currentUserId, stdParts, ultraParts)
+                    }
+                }
         }
         viewModelScope.launch {
             _foodInventory.collect { inv ->
@@ -801,6 +849,8 @@ class DigiPulseViewModel(
         _nextDigiCoinTickSec.value = DigimonCatalog.DIGI_COIN_INTERVAL_SEC
         _foodInventory.value = emptyMap()
         _tammingBerryCount.value = 0
+        _standardMonsterPartsCount.value = 0
+        _ultraRareMonsterPartsCount.value = 0
         _lastClaimedDailyLoginDateKey.value = ""
         _lastDailyLoginRewardSummary.value = null
         _recentEvolutionUnlocked.value = null
@@ -819,6 +869,19 @@ class DigiPulseViewModel(
         }
     }
 
+    private fun checkBlockedBy1HpRecovery(
+        creature: DigimonCreature,
+        nowMs: Long = System.currentTimeMillis()
+    ): Boolean {
+        if (creature.isRecoveringFrom1Hp(nowMs)) {
+            val rem = creature.formattedRecoveryRemaining(nowMs)
+            _statusBannerMessage.value =
+                "1 HP RECOVERY LOCKOUT: ${creature.nickname} reached 1 HP in wild battle and must recover for $rem (5 mins total) before you can do anything with ${creature.nickname} again!"
+            return true
+        }
+        return false
+    }
+
     fun postCreatureForTrade(creatureId: String, requestedStageOrSpecies: String) {
         if (!isGoogleSignedIn) {
             _statusBannerMessage.value =
@@ -832,6 +895,7 @@ class DigiPulseViewModel(
             return
         }
         val offered = currentSquad.firstOrNull { it.id == creatureId } ?: return
+        if (checkBlockedBy1HpRecovery(offered)) return
         val nowMs = System.currentTimeMillis()
         val tradeId = "trade_${nowMs}_${offered.speciesId}"
         val nowTs = Timestamp.now()
@@ -898,6 +962,7 @@ class DigiPulseViewModel(
             return
         }
         val myCreature = uiState.value.creatures.firstOrNull { it.id == myCreatureIdToTrade } ?: return
+        if (checkBlockedBy1HpRecovery(myCreature)) return
         val nowMs = System.currentTimeMillis()
 
         val receivedLocal = DigimonCreature(
@@ -1010,8 +1075,109 @@ class DigiPulseViewModel(
         val nowMs = System.currentTimeMillis()
         var coinCatchUpApplied = false
         for (creature in creatures) {
-            if (creature.id.isBlank() || !offlineCatchUpAppliedIds.add(creature.id)) continue
-            val elapsedMinutes = ((nowMs - creature.lastUpdatedMs).coerceAtLeast(0L)) / 60_000L
+            if (creature.id.isBlank()) continue
+
+            // Always check 24-Hour Offline Auto-Training & 5-Min 1 HP Recovery catch-up
+            var working = creature
+            var changedSpecial = false
+
+            val recEndMs = working.persistedRecoveryEndsAtMs()
+            if (recEndMs > 0L && nowMs >= recEndMs) {
+                val newForms = working.withUpdatedMetadataInForms(
+                    newSkillNodes = working.allUnlockedSkillNodeIds(),
+                    newBonusStats = working.persistedNonTrainingBonusStats(),
+                    newExpeditionsCount = working.persistedCompletedExpeditions(),
+                    newOfflineTrainEndMs = working.persistedOfflineTrainingEndMs(),
+                    newOfflineTrainTickMs = working.persistedOfflineTrainingLastTickMs(),
+                    newRecoveryEndsMs = 0L
+                )
+                working = working.copy(
+                    health = 100,
+                    recoveryEndsAtMs = 0L,
+                    unlockedForms = newForms,
+                    lastUpdatedMs = nowMs
+                )
+                changedSpecial = true
+                _statusBannerMessage.value =
+                    "${working.nickname} finished its 5-minute recovery from 1 HP and is back at 100% HP!"
+            }
+
+            val otEndMs = working.persistedOfflineTrainingEndMs()
+            val otLastTickMs = working.persistedOfflineTrainingLastTickMs().let {
+                if (it > 0L) it else (otEndMs - DigimonCatalog.OFFLINE_TRAINING_24H_DURATION_MS).coerceAtLeast(0L)
+            }
+            if (otEndMs > 0L) {
+                val effectiveNow = minOf(nowMs, otEndMs)
+                val elapsedTrainMs = (effectiveNow - otLastTickMs).coerceAtLeast(0L)
+                val cycles = (elapsedTrainMs / DigimonCatalog.OFFLINE_TRAINING_CYCLE_MS).toInt()
+                val sessionFinished = nowMs >= otEndMs
+                if (cycles > 0 || sessionFinished) {
+                    val atkGain = cycles * 2
+                    val defGain = cycles * 2
+                    val spdGain = cycles * 2
+                    val wisGain = cycles * 3
+                    val syncGain = cycles * 4
+                    val bondGain = cycles * 1
+                    val nextTickMs = if (sessionFinished) 0L else (otLastTickMs + cycles * DigimonCatalog.OFFLINE_TRAINING_CYCLE_MS)
+                    val nextEndMs = if (sessionFinished) 0L else otEndMs
+                    val newForms = working.withUpdatedMetadataInForms(
+                        newSkillNodes = working.allUnlockedSkillNodeIds(),
+                        newBonusStats = working.persistedNonTrainingBonusStats(),
+                        newExpeditionsCount = working.persistedCompletedExpeditions(),
+                        newOfflineTrainEndMs = nextEndMs,
+                        newOfflineTrainTickMs = nextTickMs,
+                        newRecoveryEndsMs = working.persistedRecoveryEndsAtMs()
+                    )
+                    working = working.copy(
+                        attack = working.attack + atkGain,
+                        defense = working.defense + defGain,
+                        speed = working.speed + spdGain,
+                        wisdom = working.wisdom + wisGain,
+                        evolutionProgress = (working.evolutionProgress + syncGain).coerceIn(0, 100),
+                        bondLevel = (working.bondLevel + bondGain).coerceIn(0, 100),
+                        offlineTrainingEndMs = nextEndMs,
+                        offlineTrainingLastTickMs = nextTickMs,
+                        unlockedForms = newForms,
+                        lastUpdatedMs = nowMs
+                    )
+                    changedSpecial = true
+                    if (cycles > 0) {
+                        val summary =
+                            "24h Offline Auto-Training (${cycles}x cycles while closed/active): +$atkGain ATK, +$defGain DEF, +$spdGain SPD, +$wisGain WIS (+$cycles LVL • Now LVL ${working.currentLevel()}/100)"
+                        val logEntry = prependOptimisticLog(
+                            TrainingLogEntry(
+                                userId = currentUserId,
+                                creatureId = working.id,
+                                creatureName = working.nickname,
+                                activityType = "Power Drill",
+                                grade = "S",
+                                statDeltaSummary = summary,
+                                xpGained = cycles * 65,
+                                dateKey = todayDateKey()
+                            )
+                        )
+                        _statusBannerMessage.value = "${working.nickname} gained +$cycles Levels from 24h Offline Auto-Training! ($summary)"
+                        if (isGoogleSignedIn) {
+                            repository.addTrainingLog(logEntry)
+                        }
+                    } else if (sessionFinished) {
+                        _statusBannerMessage.value =
+                            "${working.nickname}'s 24-Hour Offline Auto-Training session has completed (LVL ${working.currentLevel()}/100)!"
+                    }
+                }
+            }
+
+            if (!offlineCatchUpAppliedIds.add(creature.id)) {
+                if (changedSpecial) {
+                    upsertOptimisticCreature(working)
+                    if (isGoogleSignedIn) {
+                        repository.updateCreature(working)
+                    }
+                }
+                continue
+            }
+
+            val elapsedMinutes = ((nowMs - working.lastUpdatedMs).coerceAtLeast(0L)) / 60_000L
             if (elapsedMinutes >= 5L) {
                 val cappedMins = elapsedMinutes.coerceAtMost(720L).toInt()
                 if (!coinCatchUpApplied) {
@@ -1021,16 +1187,16 @@ class DigiPulseViewModel(
                     coinCatchUpApplied = true
                 }
                 // Monsters ONLY gain Stamina when in Cryo-Rest; auto-wake when reaching 100% Stamina
-                val staminaRecovered = if (creature.isResting) (cappedMins * 3) else 0
-                val expSpec = if (creature.isOnExpedition()) DigimonCatalog.getExpedition(creature.activeExpeditionId) else null
-                val expStaminaDrain = if (expSpec != null && !creature.isResting) (cappedMins / 4) * expSpec.staminaDrainPerCycle else 0
-                val hungerDecayBase = if (creature.isResting) (cappedMins / 6) else (cappedMins / 3)
+                val staminaRecovered = if (working.isResting) (cappedMins * 3) else 0
+                val expSpec = if (working.isOnExpedition()) DigimonCatalog.getExpedition(working.activeExpeditionId) else null
+                val expStaminaDrain = if (expSpec != null && !working.isResting) (cappedMins / 4) * expSpec.staminaDrainPerCycle else 0
+                val hungerDecayBase = if (working.isResting) (cappedMins / 6) else (cappedMins / 3)
                 val expHungerDrain = if (expSpec != null) (cappedMins / 4) * expSpec.hungerDrainPerCycle else 0
-                val newHunger = (creature.hunger - hungerDecayBase - expHungerDrain).coerceIn(10, 100)
-                val newStamina = (creature.stamina + staminaRecovered - expStaminaDrain).coerceIn(0, 100)
-                val stillResting = if (creature.isResting && newStamina >= 100) false else creature.isResting
+                val newHunger = (working.hunger - hungerDecayBase - expHungerDrain).coerceIn(10, 100)
+                val newStamina = (working.stamina + staminaRecovered - expStaminaDrain).coerceIn(0, 100)
+                val stillResting = if (working.isResting && newStamina >= 100) false else working.isResting
 
-                val updated = creature.copy(
+                val updated = working.copy(
                     stamina = newStamina,
                     hunger = newHunger,
                     isResting = stillResting,
@@ -1039,6 +1205,11 @@ class DigiPulseViewModel(
                 upsertOptimisticCreature(updated)
                 if (isGoogleSignedIn) {
                     repository.updateCreature(updated)
+                }
+            } else if (changedSpecial) {
+                upsertOptimisticCreature(working)
+                if (isGoogleSignedIn) {
+                    repository.updateCreature(working)
                 }
             }
         }
@@ -1074,6 +1245,7 @@ class DigiPulseViewModel(
                 val active = uiState.value.activeCreature
                 if (active != null) {
                     val baseBpm = when {
+                        active.isRecoveringFrom1Hp(nowMs) -> 52
                         active.isResting -> 56
                         active.canEvolveAnyBranch() -> 118
                         active.stamina < 25 -> 96
@@ -1118,12 +1290,12 @@ class DigiPulseViewModel(
                         }
                     }
 
-                    if (hunCountdown == 25 && !newIsResting) {
+                    if (hunCountdown == 25 && !newIsResting && !creature.isRecoveringFrom1Hp(nowMs)) {
                         val baseDrain = 2
                         val expDrain = if (expSpec != null && nowMs < newExpEndMs) expSpec.hungerDrainPerCycle else 0
                         newHunger = (newHunger - baseDrain - expDrain).coerceIn(0, 100)
                         val healthDelta = if (newHunger < 15) -2 else if (newHunger >= 75 && newHealth < 100) 1 else 0
-                        newHealth = (newHealth + healthDelta).coerceIn(0, 100)
+                        newHealth = (newHealth + healthDelta).coerceIn(1, 100)
                         changed = true
                     }
 
@@ -1280,6 +1452,126 @@ class DigiPulseViewModel(
             "Purchased +$qty Tamming Berry (-$totalCost DigiCoins)! You now have $newTotal Tamming Berries in your bag for Wild Taming."
     }
 
+    fun sellStandardMonsterParts(quantity: Int = 1) {
+        val owned = _standardMonsterPartsCount.value
+        if (owned <= 0) {
+            _statusBannerMessage.value =
+                "You have 0 Standard Monster Parts to sell! Battle wild monsters you don't want to tame in the Wild tab to collect Monster Parts."
+            return
+        }
+        val sellQty = quantity.coerceIn(1, owned)
+        val coinsEarned = sellQty * DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS
+        _standardMonsterPartsCount.value = (owned - sellQty).coerceAtLeast(0)
+        _digiCoins.value = _digiCoins.value + coinsEarned
+        _statusBannerMessage.value =
+            "Sold ${sellQty}x Standard Monster ${if (sellQty == 1) "Part" else "Parts"} for +$coinsEarned DigiCoins (${DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS} DigiCoins each)!"
+    }
+
+    fun sellUltraRareMonsterParts(quantity: Int = 1) {
+        val owned = _ultraRareMonsterPartsCount.value
+        if (owned <= 0) {
+            _statusBannerMessage.value =
+                "You have 0 Ultra Rare Monster Parts to sell! Battle Ultra Rare wild monsters in the Wild tab to collect Ultra Rare Monster Parts (${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} DigiCoins each)."
+            return
+        }
+        val sellQty = quantity.coerceIn(1, owned)
+        val coinsEarned = sellQty * DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS
+        _ultraRareMonsterPartsCount.value = (owned - sellQty).coerceAtLeast(0)
+        _digiCoins.value = _digiCoins.value + coinsEarned
+        _statusBannerMessage.value =
+            "Sold ${sellQty}x Ultra Rare Monster ${if (sellQty == 1) "Part" else "Parts"} for +$coinsEarned DigiCoins (${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} DigiCoins each)!"
+    }
+
+    fun sellAllMonsterParts() {
+        val stdOwned = _standardMonsterPartsCount.value
+        val ultraOwned = _ultraRareMonsterPartsCount.value
+        if (stdOwned <= 0 && ultraOwned <= 0) {
+            _statusBannerMessage.value =
+                "You have 0 Monster Parts in your salvage bag! Battle wild monsters in the Wild tab to earn Standard Parts (2 DigiCoins) & Ultra Rare Parts (5 DigiCoins)."
+            return
+        }
+        val stdCoins = stdOwned * DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS
+        val ultraCoins = ultraOwned * DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS
+        val totalCoins = stdCoins + ultraCoins
+        _standardMonsterPartsCount.value = 0
+        _ultraRareMonsterPartsCount.value = 0
+        _digiCoins.value = _digiCoins.value + totalCoins
+        _statusBannerMessage.value =
+            "Sold ALL Monster Parts (${stdOwned}x Standard @ 2 Coins + ${ultraOwned}x Ultra Rare @ 5 Coins) for +$totalCoins DigiCoins!"
+    }
+
+    fun start24hOfflineTraining() {
+        val active = uiState.value.activeCreature ?: return
+        val nowMs = System.currentTimeMillis()
+        if (checkBlockedBy1HpRecovery(active, nowMs)) return
+
+        if (active.isInOfflineTraining(nowMs)) {
+            _statusBannerMessage.value =
+                "${active.nickname} is already in 24-Hour Offline Auto-Training (${active.formattedOfflineTrainingRemaining(nowMs)} remaining)! It will continue leveling even when the app is closed."
+            return
+        }
+
+        val currentCoins = _digiCoins.value
+        val cost = DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST
+        if (currentCoins < cost) {
+            _statusBannerMessage.value =
+                "Not enough DigiCoins for 24-Hour Offline Auto-Training! Costs $cost DigiCoins (you have $currentCoins). Earn +5 Coins every 5m or sell Monster Parts from Wild Battles!"
+            return
+        }
+
+        val remainingCoins = (currentCoins - cost).coerceAtLeast(0)
+        _digiCoins.value = remainingCoins
+
+        val endMs = nowMs + DigimonCatalog.OFFLINE_TRAINING_24H_DURATION_MS
+        // Grant an immediate kickoff training cycle (+2 ATK, +2 DEF, +2 SPD, +3 WIS = +9 trained stats = +1 Level) + 24 hours of background/offline training
+        val newForms = active.withUpdatedMetadataInForms(
+            newSkillNodes = active.allUnlockedSkillNodeIds(),
+            newBonusStats = active.persistedNonTrainingBonusStats(),
+            newExpeditionsCount = active.persistedCompletedExpeditions(),
+            newOfflineTrainEndMs = endMs,
+            newOfflineTrainTickMs = nowMs,
+            newRecoveryEndsMs = active.persistedRecoveryEndsAtMs()
+        )
+        val updated = active.copy(
+            attack = active.attack + 2,
+            defense = active.defense + 2,
+            speed = active.speed + 2,
+            wisdom = active.wisdom + 3,
+            evolutionProgress = (active.evolutionProgress + 6).coerceIn(0, 100),
+            bondLevel = (active.bondLevel + 3).coerceIn(0, 100),
+            offlineTrainingEndMs = endMs,
+            offlineTrainingLastTickMs = nowMs,
+            unlockedForms = newForms,
+            lastUpdatedMs = nowMs
+        )
+
+        upsertOptimisticCreature(updated)
+        val summary =
+            "Activated 24-Hour Offline Auto-Training (-$cost DigiCoins, $remainingCoins left): Continues training ${active.nickname} for 24h even when app is closed! (+1 Kickoff LVL • LVL ${updated.currentLevel()}/100)"
+        val logEntry = prependOptimisticLog(
+            TrainingLogEntry(
+                userId = currentUserId,
+                creatureId = active.id,
+                creatureName = active.nickname,
+                activityType = "Power Drill",
+                grade = "S",
+                statDeltaSummary = summary,
+                xpGained = 150,
+                dateKey = todayDateKey()
+            )
+        )
+        _statusBannerMessage.value = "★ $summary"
+
+        viewModelScope.launch {
+            if (isGoogleSignedIn) {
+                repository.updateCreature(updated)
+                repository.addTrainingLog(logEntry)
+            }
+            checkAndDispatchThresholds(updated)
+            syncLeaderboardWithSquad()
+        }
+    }
+
     fun claimDailyLoginReward() {
         val todayKey = todayDateKey()
         val currentState = uiState.value
@@ -1350,6 +1642,7 @@ class DigiPulseViewModel(
 
     fun feedCreature(ration: DigiRation) {
         val active = uiState.value.activeCreature ?: return
+        if (checkBlockedBy1HpRecovery(active)) return
         val currentMap = _foodInventory.value.toMutableMap()
         val ownedCount = currentMap[ration] ?: 0
         if (ownedCount <= 0) {
@@ -1424,6 +1717,7 @@ class DigiPulseViewModel(
 
     fun healCreature() {
         val active = uiState.value.activeCreature ?: return
+        if (checkBlockedBy1HpRecovery(active)) return
         viewModelScope.launch {
             val healAmount = (100 - active.health).coerceAtLeast(15).coerceAtMost(45)
             val newHealth = (active.health + healAmount).coerceIn(0, 100)
@@ -1457,6 +1751,7 @@ class DigiPulseViewModel(
 
     fun toggleRestMode() {
         val active = uiState.value.activeCreature ?: return
+        if (checkBlockedBy1HpRecovery(active)) return
         // Anti-Spam Cryo-Rest:
         // 1. If already resting, it must stay in Cryo-Rest until reaching 100% Stamina (cannot spam toggle!)
         if (active.isResting) {
@@ -1499,6 +1794,7 @@ class DigiPulseViewModel(
 
     fun completeTrainingDrill(drillType: DrillType, scorePercent: Int) {
         val active = uiState.value.activeCreature ?: return
+        if (checkBlockedBy1HpRecovery(active)) return
         val currentCoins = _digiCoins.value
         if (currentCoins < DigimonCatalog.TRAINING_DRILL_COIN_COST) {
             val mins = _nextDigiCoinTickSec.value / 60
@@ -1598,6 +1894,7 @@ class DigiPulseViewModel(
 
     fun evolveCreature(branch: EvolutionBranchRequirement) {
         val active = uiState.value.activeCreature ?: return
+        if (checkBlockedBy1HpRecovery(active)) return
         val minRequiredLvl = if (branch.isRareLevel100Branch) 100 else maxOf(20, branch.requiredLevel)
         if (!branch.isStatsAndSyncMetBy(active)) {
             val missing = buildList {
@@ -1723,6 +2020,13 @@ class DigiPulseViewModel(
             "Ultimate" -> Random.nextInt(40, 58)
             else -> Random.nextInt(65, 80)
         }
+        val isUltraRare = chosen.stage == "Mega" || chosen.stage == "Ultimate" || Random.nextInt(100) < 30
+        val partLabel = if (isUltraRare) {
+            "Ultra Rare ${chosen.speciesName} Core Part (${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} DigiCoins)"
+        } else {
+            "${chosen.speciesName} Monster Part (${DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS} DigiCoins)"
+        }
+        val rarityPrefix = if (isUltraRare) "★ ULTRA RARE WILD " else "Wild "
         _wildEncounter.value = WildEncounterState(
             speciesId = chosen.speciesId,
             speciesName = chosen.speciesName,
@@ -1732,12 +2036,134 @@ class DigiPulseViewModel(
             baseSuccessRatePercent = baseRate,
             tameProgress = 0,
             berriesUsed = 0,
-            lastRollOutcomeTitle = "Wild ${chosen.speciesName} (${chosen.stage}) Appeared!",
-            lastRollOutcomeDetail = "Base Tame Rate: $baseRate% (Random Roll per Tamming Berry • Costs ${DigimonCatalog.TAMMING_BERRY_COIN_COST} DigiCoins/berry)"
+            isUltraRareWild = isUltraRare,
+            droppedPartName = partLabel,
+            lastRollOutcomeTitle = "$rarityPrefix${chosen.speciesName} (${chosen.stage}) Appeared!",
+            lastRollOutcomeDetail = "Tame Rate: $baseRate% (Throw Berry) OR Battle for $partLabel!"
         )
     }
 
+    fun battleWildMonster() {
+        val active = uiState.value.activeCreature ?: return
+        val nowMs = System.currentTimeMillis()
+        if (checkBlockedBy1HpRecovery(active, nowMs)) return
+
+        val currentEncounter = _wildEncounter.value ?: run {
+            scanWildMonster()
+            return
+        }
+
+        val partsDropped = if (Random.nextInt(100) < 35) 2 else 1
+        val isUltraRare = currentEncounter.isUltraRareWild
+        if (isUltraRare) {
+            _ultraRareMonsterPartsCount.value = _ultraRareMonsterPartsCount.value + partsDropped
+        } else {
+            _standardMonsterPartsCount.value = _standardMonsterPartsCount.value + partsDropped
+        }
+
+        // Wild battles deal combat damage and can drop the monster down to 1 HP!
+        // When a monster reaches 1 HP, it enters a mandatory 5-minute recovery lockout before you can do anything with that monster again.
+        val fierceCounterHit = Random.nextInt(100) < 38 || active.health <= 42
+        val rawDamage = when (currentEncounter.stage) {
+            "Mega" -> Random.nextInt(45, 75)
+            "Ultimate" -> Random.nextInt(36, 62)
+            "Champion" -> Random.nextInt(28, 50)
+            else -> Random.nextInt(22, 42)
+        }
+        val newHealth = if (fierceCounterHit) {
+            1
+        } else {
+            (active.health - rawDamage).coerceAtLeast(1)
+        }
+
+        val hit1HpLockout = newHealth <= 1
+        val recoveryEndMs = if (hit1HpLockout) {
+            nowMs + DigimonCatalog.BATTLE_RECOVERY_5MIN_DURATION_MS
+        } else {
+            active.persistedRecoveryEndsAtMs()
+        }
+
+        val newForms = active.withUpdatedMetadataInForms(
+            newSkillNodes = active.allUnlockedSkillNodeIds(),
+            newBonusStats = active.persistedNonTrainingBonusStats(),
+            newExpeditionsCount = active.persistedCompletedExpeditions(),
+            newOfflineTrainEndMs = active.persistedOfflineTrainingEndMs(),
+            newOfflineTrainTickMs = active.persistedOfflineTrainingLastTickMs(),
+            newRecoveryEndsMs = recoveryEndMs
+        )
+
+        val updated = active.copy(
+            health = newHealth,
+            stamina = (active.stamina - 10).coerceIn(0, 100),
+            bondLevel = (active.bondLevel + 2).coerceIn(0, 100),
+            isResting = false,
+            recoveryEndsAtMs = recoveryEndMs,
+            unlockedForms = newForms,
+            lastUpdatedMs = nowMs
+        )
+        upsertOptimisticCreature(updated)
+
+        val partTypeLabel = if (isUltraRare) {
+            "Ultra Rare Monster ${if (partsDropped == 1) "Part" else "Parts"} (Sells for ${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} DigiCoins each)"
+        } else {
+            "Standard Monster ${if (partsDropped == 1) "Part" else "Parts"} (Sells for ${DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS} DigiCoins each)"
+        }
+
+        val recoveryNotice = if (hit1HpLockout) {
+            " • ⚠️ ${active.nickname} dropped to 1 HP! Must recover for 5:00 before doing anything with ${active.nickname} again."
+        } else {
+            " • ${active.nickname} HP: $newHealth/100"
+        }
+
+        val summary =
+            "Battled Wild ${currentEncounter.speciesName} (${currentEncounter.stage}): Looted +${partsDropped}x $partTypeLabel!$recoveryNotice"
+        val battleLog = prependOptimisticLog(
+            TrainingLogEntry(
+                userId = currentUserId,
+                creatureId = active.id,
+                creatureName = active.nickname,
+                activityType = "Arena Sparring",
+                grade = if (isUltraRare) "S" else "A",
+                statDeltaSummary = summary.take(190),
+                xpGained = if (isUltraRare) 95 else 60,
+                dateKey = todayDateKey()
+            )
+        )
+
+        if (hit1HpLockout) {
+            val notif = prependOptimisticNotification(
+                PetNotification(
+                    userId = currentUserId,
+                    creatureId = active.id,
+                    creatureName = active.nickname,
+                    severity = "CRITICAL",
+                    title = "1 HP Knockdown: ${active.nickname} Recovering (5m)!",
+                    message = "${active.nickname} dropped to 1 HP battling Wild ${currentEncounter.speciesName}! Looted +${partsDropped}x $partTypeLabel. ${active.nickname} must recover for 5 minutes before any action.",
+                    isRead = false
+                )
+            )
+            if (isGoogleSignedIn) {
+                viewModelScope.launch { repository.addNotification(notif) }
+            }
+        }
+
+        _statusBannerMessage.value = summary
+        // Automatically scan a fresh wild monster after battle
+        scanWildMonster()
+
+        viewModelScope.launch {
+            if (isGoogleSignedIn) {
+                repository.updateCreature(updated)
+                repository.addTrainingLog(battleLog)
+            }
+            checkAndDispatchThresholds(updated)
+            syncLeaderboardWithSquad()
+        }
+    }
+
     fun throwTammingBerry() {
+        val active = uiState.value.activeCreature
+        if (active != null && checkBlockedBy1HpRecovery(active)) return
         val currentEncounter = _wildEncounter.value ?: run {
             scanWildMonster()
             return
@@ -1909,6 +2335,7 @@ class DigiPulseViewModel(
 
     fun startExpedition(expedition: ExpeditionSpec) {
         val active = uiState.value.activeCreature ?: return
+        if (checkBlockedBy1HpRecovery(active)) return
         if (active.isOnExpedition()) {
             _statusBannerMessage.value = "${active.nickname} is already deployed on an expedition!"
             return
@@ -2053,6 +2480,7 @@ class DigiPulseViewModel(
 
     fun unlockSkillNode(node: MonsterSkillNode) {
         val active = uiState.value.activeCreature ?: return
+        if (checkBlockedBy1HpRecovery(active)) return
         val currentUnlocked = active.allUnlockedSkillNodeIds()
         if (node.nodeId in currentUnlocked) {
             _statusBannerMessage.value = "${node.title} is already unlocked for ${active.nickname}!"
@@ -2118,6 +2546,7 @@ class DigiPulseViewModel(
             return
         }
         val active = uiState.value.activeCreature ?: return
+        if (checkBlockedBy1HpRecovery(active)) return
         viewModelScope.launch {
             val squadCp = uiState.value.creatures.sumOf { it.combatPower() }.coerceAtLeast(active.combatPower())
             val attributeBonus = hasAttributeAdvantage(active.attribute, opponent.partnerAttribute)

@@ -1222,6 +1222,20 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
         prefs()?.edit()?.putInt("berries_$userId", count.coerceAtLeast(0))?.apply()
     }
 
+    fun loadMonsterPartsCounts(userId: String): Pair<Int, Int> {
+        val p = prefs() ?: return 0 to 0
+        val standard = p.getInt("parts_std_$userId", 0).coerceAtLeast(0)
+        val ultraRare = p.getInt("parts_ultra_$userId", 0).coerceAtLeast(0)
+        return standard to ultraRare
+    }
+
+    fun saveMonsterPartsCounts(userId: String, standardParts: Int, ultraRareParts: Int) {
+        prefs()?.edit()
+            ?.putInt("parts_std_$userId", standardParts.coerceAtLeast(0))
+            ?.putInt("parts_ultra_$userId", ultraRareParts.coerceAtLeast(0))
+            ?.apply()
+    }
+
     fun loadFoodInventory(userId: String): Map<DigiRation, Int> {
         val p = prefs() ?: return emptyMap()
         val raw = p.getString("food_$userId", null) ?: return emptyMap()
@@ -1309,6 +1323,9 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                         expeditionStartMs = obj.optLong("expeditionStartMs", 0L),
                         expeditionEndMs = obj.optLong("expeditionEndMs", 0L),
                         completedExpeditionsCount = obj.optInt("completedExpeditionsCount", 0),
+                        offlineTrainingEndMs = obj.optLong("offlineTrainingEndMs", 0L),
+                        offlineTrainingLastTickMs = obj.optLong("offlineTrainingLastTickMs", 0L),
+                        recoveryEndsAtMs = obj.optLong("recoveryEndsAtMs", 0L),
                         lastUpdatedMs = obj.optLong("lastUpdatedMs", System.currentTimeMillis())
                     )
                 )
@@ -1347,6 +1364,9 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
             obj.put("expeditionStartMs", c.expeditionStartMs)
             obj.put("expeditionEndMs", c.expeditionEndMs)
             obj.put("completedExpeditionsCount", c.persistedCompletedExpeditions())
+            obj.put("offlineTrainingEndMs", c.persistedOfflineTrainingEndMs())
+            obj.put("offlineTrainingLastTickMs", c.persistedOfflineTrainingLastTickMs())
+            obj.put("recoveryEndsAtMs", c.persistedRecoveryEndsAtMs())
             obj.put("lastUpdatedMs", c.lastUpdatedMs)
             arr.put(obj)
         }
@@ -1358,6 +1378,8 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
         p.edit()
             .remove("coins_$userId")
             .remove("berries_$userId")
+            .remove("parts_std_$userId")
+            .remove("parts_ultra_$userId")
             .remove("food_$userId")
             .remove("daily_date_$userId")
             .remove("daily_summary_$userId")

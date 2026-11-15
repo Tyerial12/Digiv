@@ -91,10 +91,15 @@ fun DrillsHubTab(
     digiCoins: Int = DigimonCatalog.STARTING_DIGI_COINS,
     nextDigiCoinTickSec: Int = DigimonCatalog.DIGI_COIN_INTERVAL_SEC,
     onCompleteDrill: (DrillType, Int) -> Unit,
+    onStart24hOfflineTraining: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var activeDrill by remember { mutableStateOf<DrillType?>(null) }
-    val canAffordDrill = digiCoins >= DigimonCatalog.TRAINING_DRILL_COIN_COST
+    val nowMs = System.currentTimeMillis()
+    val isRecoveringFrom1Hp = activeCreature?.isRecoveringFrom1Hp(nowMs) == true
+    val isInOfflineTraining = activeCreature?.isInOfflineTraining(nowMs) == true
+    val canAffordDrill = digiCoins >= DigimonCatalog.TRAINING_DRILL_COIN_COST && !isRecoveringFrom1Hp
+    val canAfford24hOffline = digiCoins >= DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST && !isRecoveringFrom1Hp && !isInOfflineTraining
     val nextCoinMins = nextDigiCoinTickSec / 60
     val nextCoinSecs = nextDigiCoinTickSec % 60
     val timerFormatted = "%d:%02d".format(java.util.Locale.US, nextCoinMins, nextCoinSecs)
@@ -111,6 +116,123 @@ fun DrillsHubTab(
             style = MaterialTheme.typography.headlineLarge,
             color = HoloCyanPrimary
         )
+
+        // 1 HP 5-Minute Mandatory Recovery Lockout Warning Banner
+        if (activeCreature != null && isRecoveringFrom1Hp) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("drills_1hp_recovery_lockout_card"),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = CyberVoidBg),
+                border = BorderStroke(1.5.dp, SolarCoralHunger)
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Text(
+                        text = "⚠️ 1 HP RECOVERY LOCKOUT (${activeCreature.formattedRecoveryRemaining(nowMs)} LEFT)",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = SolarCoralHunger
+                    )
+                    Text(
+                        text = "${activeCreature.nickname} dropped to 1 HP battling a wild monster! Recovery lasts 5 minutes — you cannot train or do anything with ${activeCreature.nickname} until recovery finishes.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        // 24-Hour Offline Auto-Training (100 DigiCoins for 24 Hours when App is Closed) Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("offline_training_24h_card"),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = HoloCardElevated),
+            border = BorderStroke(
+                width = 1.5.dp,
+                color = if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FlowRow(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(
+                        text = "24-HOUR OFFLINE AUTO-TRAINING",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary
+                    )
+                    Surface(
+                        color = (if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary).copy(alpha = 0.18f),
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary)
+                    ) {
+                        Text(
+                            text = if (isInOfflineTraining && activeCreature != null) {
+                                "ACTIVE • ${activeCreature.formattedOfflineTrainingRemaining(nowMs)} LEFT"
+                            } else {
+                                "${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DIGICOINS / 24 HRS"
+                            },
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        )
+                    }
+                }
+
+                Text(
+                    text = if (isInOfflineTraining && activeCreature != null) {
+                        "✓ ${activeCreature.nickname} is training automatically for 24 hours (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} remaining)! Continues leveling (+2 ATK, +2 DEF, +2 SPD, +3 WIS & +4% Sync every 15m) even when the app is closed."
+                    } else {
+                        "Train ${activeCreature?.nickname ?: "your monster"} automatically for 24 hours — even when the app is closed — for ${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DigiCoins! Grants an immediate +1 Level kickoff plus automatic stat & level gains every 15m for 24h."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.White
+                )
+
+                Button(
+                    onClick = onStart24hOfflineTraining,
+                    enabled = activeCreature != null && canAfford24hOffline,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary,
+                        contentColor = CyberVoidBg
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 46.dp)
+                        .testTag("start_24h_offline_training_button")
+                ) {
+                    Text(
+                        text = when {
+                            isRecoveringFrom1Hp && activeCreature != null ->
+                                "RECOVERING FROM 1 HP (${activeCreature.formattedRecoveryRemaining(nowMs)} LEFT)"
+                            isInOfflineTraining && activeCreature != null ->
+                                "24H OFFLINE TRAINING ACTIVE (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} LEFT)"
+                            digiCoins >= DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST ->
+                                "START 24H OFFLINE TRAINING (${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DIGICOINS)"
+                            else ->
+                                "NEED ${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DIGICOINS FOR 24H OFFLINE TRAINING ($digiCoins/${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST})"
+                        },
+                        style = MaterialTheme.typography.labelLarge,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+        }
 
         // DigiCoin Training Economy & Leveling Rules Card
         Card(
@@ -155,7 +277,7 @@ fun DrillsHubTab(
                     }
                 }
                 Text(
-                    text = "Cost: ${DigimonCatalog.TRAINING_DRILL_COIN_COST} DigiCoins per Drill (Start with ${DigimonCatalog.STARTING_DIGI_COINS} • +5 every 5m).",
+                    text = "Cost: ${DigimonCatalog.TRAINING_DRILL_COIN_COST} DigiCoins per Drill OR ${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DigiCoins for 24h Offline Auto-Training.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White
                 )
@@ -171,7 +293,7 @@ fun DrillsHubTab(
             }
         }
 
-        if (activeDrill != null && activeCreature != null) {
+        if (activeDrill != null && activeCreature != null && !isRecoveringFrom1Hp) {
             InteractiveMiniDrillCard(
                 creature = activeCreature,
                 drillType = activeDrill!!,
@@ -265,10 +387,13 @@ fun DrillsHubTab(
                                 .testTag("start_drill_${drill.name.lowercase()}")
                         ) {
                             Text(
-                                text = if (canAffordDrill) {
-                                    "START TRAINING DRILL (${DigimonCatalog.TRAINING_DRILL_COIN_COST} DIGICOINS)"
-                                } else {
-                                    "NEED ${DigimonCatalog.TRAINING_DRILL_COIN_COST} DIGICOINS ($digiCoins/${DigimonCatalog.TRAINING_DRILL_COIN_COST} • +5 IN $timerFormatted)"
+                                text = when {
+                                    isRecoveringFrom1Hp && activeCreature != null ->
+                                        "RECOVERING FROM 1 HP (${activeCreature.formattedRecoveryRemaining(nowMs)} LEFT)"
+                                    canAffordDrill ->
+                                        "START TRAINING DRILL (${DigimonCatalog.TRAINING_DRILL_COIN_COST} DIGICOINS)"
+                                    else ->
+                                        "NEED ${DigimonCatalog.TRAINING_DRILL_COIN_COST} DIGICOINS ($digiCoins/${DigimonCatalog.TRAINING_DRILL_COIN_COST} • +5 IN $timerFormatted)"
                                 },
                                 style = MaterialTheme.typography.labelLarge,
                                 textAlign = TextAlign.Center

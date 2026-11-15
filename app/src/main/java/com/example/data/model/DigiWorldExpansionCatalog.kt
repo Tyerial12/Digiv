@@ -50,10 +50,12 @@ data class WildEncounterState(
     val attribute: String,
     val wildLevel: Int,
     val baseSuccessRatePercent: Int,
+    val isUltraRareWild: Boolean = false,
+    val droppedPartName: String = "Chrome Monster Fang",
     val tameProgress: Int = 0,
     val berriesUsed: Int = 0,
     val lastRollOutcomeTitle: String = "Wild Monster Spotted!",
-    val lastRollOutcomeDetail: String = "Throw a Tamming Berry (2 DigiCoins) to roll a random taming chance!",
+    val lastRollOutcomeDetail: String = "Throw a Tamming Berry (2 DigiCoins) to tame, or Battle for Monster Parts!",
     val isTamed: Boolean = false
 )
 

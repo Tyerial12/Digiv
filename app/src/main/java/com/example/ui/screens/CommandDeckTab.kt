@@ -683,18 +683,30 @@ private fun ActivePartnerHoloStageCard(
                     }
                 }
 
-                // Row 2: Full-width Evolution & Leveling Status Banner so every word is visible
+                // Row 2: Full-width Evolution, 24h Offline Training & 1 HP Recovery Status Banner
+                val nowMs = System.currentTimeMillis()
+                val isRecovering1Hp = creature.isRecoveringFrom1Hp(nowMs)
+                val isOfflineTraining = creature.isInOfflineTraining(nowMs)
                 Surface(
                     color = CyberVoidBg.copy(alpha = 0.7f),
                     shape = RoundedCornerShape(10.dp),
                     border = BorderStroke(
                         1.dp,
-                        if (canDigivolve) BioEmeraldHealth.copy(alpha = 0.6f) else EvolutionGoldSecondary.copy(alpha = 0.45f)
+                        when {
+                            isRecovering1Hp -> VirusCrimsonError
+                            isOfflineTraining -> BioEmeraldHealth
+                            canDigivolve -> BioEmeraldHealth.copy(alpha = 0.6f)
+                            else -> EvolutionGoldSecondary.copy(alpha = 0.45f)
+                        }
                     ),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
                         text = when {
+                            isRecovering1Hp ->
+                                "⚠️ 1 HP RECOVERY LOCKOUT (${creature.formattedRecoveryRemaining(nowMs)} LEFT): ${creature.nickname} reached 1 HP in wild battle & must recover for 5 mins before doing anything!"
+                            isOfflineTraining ->
+                                "⚡ 24H OFFLINE TRAINING ACTIVE (${creature.formattedOfflineTrainingRemaining(nowMs)} LEFT) • LVL ${creature.currentLevel()}/100 • Continues leveling when app is closed!"
                             creature.isOnExpedition() -> {
                                 val exp = DigimonCatalog.getExpedition(creature.activeExpeditionId)
                                 "ON EXPEDITION: ${exp?.title ?: "Active"} (${exp?.durationLabel ?: ""}) • Keep Fed & Cryo-Rested!"
@@ -706,12 +718,16 @@ private fun ActivePartnerHoloStageCard(
                             creature.stage == "Mega" ->
                                 "MEGA STAGE (LVL ${creature.currentLevel()}/100) • Train THIS monster to LVL 100 & meet stats to unlock the 6 Rare Monsters!"
                             creature.currentLevel() < 20 ->
-                                "EVOLUTION LOCKED UNTIL LVL 20 (Now LVL ${creature.currentLevel()}/20) • Monsters level ONLY with Training!"
+                                "EVOLUTION LOCKED UNTIL LVL 20 (Now LVL ${creature.currentLevel()}/20) • Train (10 Coins) or 24h Offline Train (100 Coins)!"
                             else ->
                                 "LVL ${creature.currentLevel()}/100 • Sync ${creature.evolutionProgress}/100% • Meet all branch stats & Sync to evolve"
                         },
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (canDigivolve) BioEmeraldHealth else EvolutionGoldSecondary,
+                        color = when {
+                            isRecovering1Hp -> VirusCrimsonError
+                            canDigivolve || isOfflineTraining -> BioEmeraldHealth
+                            else -> EvolutionGoldSecondary
+                        },
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }

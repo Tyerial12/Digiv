@@ -60,12 +60,17 @@ fun StoreHubTab(
     nextDigiCoinTickSec: Int,
     foodInventory: Map<DigiRation, Int>,
     tammingBerryCount: Int,
+    standardMonsterPartsCount: Int = 0,
+    ultraRareMonsterPartsCount: Int = 0,
     dailyLoginClaimedToday: Boolean = false,
     dailyLoginStreakDays: Int = 1,
     lastDailyLoginRewardText: String? = null,
     onClaimDailyLoginReward: () -> Unit = {},
     onBuyFood: (DigiRation, Int) -> Unit,
     onBuyTammingBerries: (Int) -> Unit,
+    onSellStandardPart: (Int) -> Unit = {},
+    onSellUltraRarePart: (Int) -> Unit = {},
+    onSellAllParts: () -> Unit = {},
     onFeedCreatureFromBag: (DigiRation) -> Unit,
     onOpenWildTamingModal: () -> Unit,
     modifier: Modifier = Modifier
@@ -74,6 +79,10 @@ fun StoreHubTab(
     val nextCoinSecs = nextDigiCoinTickSec % 60
     val timerFormatted = "%d:%02d".format(Locale.US, nextCoinMins, nextCoinSecs)
     val totalFoodOwned = foodInventory.values.sum()
+    val totalPartsCount = standardMonsterPartsCount + ultraRareMonsterPartsCount
+    val totalPartsCoinValue =
+        (standardMonsterPartsCount * DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS) +
+            (ultraRareMonsterPartsCount * DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS)
 
     Column(
         modifier = modifier
@@ -95,7 +104,7 @@ fun StoreHubTab(
                 modifier = Modifier.size(26.dp)
             )
             Text(
-                text = "DIGI-STORE // FOOD & TAMMING BERRIES",
+                text = "DIGI-STORE // FOOD, BERRIES & PARTS",
                 style = MaterialTheme.typography.headlineLarge,
                 color = EvolutionGoldSecondary
             )
@@ -270,13 +279,143 @@ fun StoreHubTab(
                             )
                         }
                     }
+
+                    Surface(
+                        color = EvolutionGoldSecondary.copy(alpha = 0.16f),
+                        shape = RoundedCornerShape(8.dp),
+                        border = BorderStroke(1.dp, EvolutionGoldSecondary.copy(alpha = 0.5f))
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                        ) {
+                            Text(
+                                text = "MONSTER PARTS: $totalPartsCount ($totalPartsCoinValue COINS)",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = EvolutionGoldSecondary
+                            )
+                        }
+                    }
                 }
 
                 Text(
-                    text = "Store Rule: You must buy or claim Food Rations here in the Store before you can feed your pet, and buy Tamming Berries here (2 DigiCoins each) to capture wild monsters!",
+                    text = "Store Rule: Buy or claim Food Rations here before feeding your pet, buy Tamming Berries (2 DigiCoins each) to capture wild monsters, or sell Monster Parts earned from battling wild monsters!",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White
                 )
+            }
+        }
+
+        // SECTION 0: MONSTER PARTS SALVAGE EXCHANGE (2 DIGICOINS STANDARD / 5 DIGICOINS ULTRA RARE)
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("store_monster_parts_card"),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = HoloSlateSurface),
+            border = BorderStroke(1.5.dp, EvolutionGoldSecondary.copy(alpha = 0.8f))
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "MONSTER PARTS SALVAGE EXCHANGE",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = EvolutionGoldSecondary
+                        )
+                        Text(
+                            text = "Sell parts dropped from battling wild monsters you don't want to tame: Standard Parts = ${DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS} DigiCoins each • Ultra Rare Wild Parts = ${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} DigiCoins each!",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Surface(
+                        color = EvolutionGoldSecondary.copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(50),
+                        border = BorderStroke(1.dp, EvolutionGoldSecondary)
+                    ) {
+                        Text(
+                            text = "$totalPartsCount PARTS ($totalPartsCoinValue COINS)",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = EvolutionGoldSecondary,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = { onSellStandardPart(1) },
+                        enabled = standardMonsterPartsCount > 0,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = HoloCyanPrimary,
+                            contentColor = CyberVoidBg
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("store_sell_standard_part_btn")
+                    ) {
+                        Text(
+                            text = "SELL STD ($standardMonsterPartsCount) • +2 COINS",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+
+                    Button(
+                        onClick = { onSellUltraRarePart(1) },
+                        enabled = ultraRareMonsterPartsCount > 0,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = EvolutionGoldSecondary,
+                            contentColor = CyberVoidBg
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .heightIn(min = 48.dp)
+                            .testTag("store_sell_ultra_rare_part_btn")
+                    ) {
+                        Text(
+                            text = "SELL ULTRA ($ultraRareMonsterPartsCount) • +5 COINS",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                }
+
+                if (totalPartsCount > 0) {
+                    FilledTonalButton(
+                        onClick = onSellAllParts,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = BioEmeraldHealth.copy(alpha = 0.22f),
+                            contentColor = BioEmeraldHealth
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 44.dp)
+                            .testTag("store_sell_all_parts_btn")
+                    ) {
+                        Text(
+                            text = "SELL ALL $totalPartsCount MONSTER PARTS (+$totalPartsCoinValue DIGICOINS)",
+                            style = MaterialTheme.typography.labelLarge
+                        )
+                    }
+                }
             }
         }
 
