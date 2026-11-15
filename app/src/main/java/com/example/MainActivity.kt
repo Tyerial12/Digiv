@@ -118,6 +118,18 @@ enum class DigiPulseTab {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (com.google.firebase.FirebaseApp.getApps(this).isEmpty()) {
+            runCatching {
+                com.google.firebase.FirebaseApp.initializeApp(
+                    this,
+                    com.google.firebase.FirebaseOptions.Builder()
+                        .setProjectId("gen-lang-client-0756465100")
+                        .setApplicationId("1:308720200884:android:72aaec02e3761237803be1")
+                        .setApiKey("AIzaSyDummyFallbackKeyForOfflineLocalMode00")
+                        .build()
+                )
+            }
+        }
         enableEdgeToEdge()
         PetNotificationHelper.ensureChannelCreated(this)
         com.example.widget.DigiWidgetSyncManager.scheduleAutoRefresh(this)

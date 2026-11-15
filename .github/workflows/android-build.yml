@@ -30,15 +30,32 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
-      - name: Prepare Keystore and Environment File
+      - name: Prepare Keystore, Environment, and Google Services Fallback
         run: |
           if [ -f ".env.example" ] && [ ! -f ".env" ]; then
             cp .env.example .env
           else
             touch .env
           fi
+
           if [ -f "debug.keystore.base64" ]; then
             base64 -d debug.keystore.base64 > debug.keystore
+          fi
+
+          if [ ! -f "debug.keystore" ]; then
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          if [ ! -f "app/google-services.json" ]; then
+            printf '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="default_web_client_id" translatable="false">308720200884-povn1r9o6m56iongq38b8fvgkvr7nl44.apps.googleusercontent.com</string>\n</resources>\n' > app/src/main/res/values/google_services_fallback.xml
           fi
 
       - name: Build Debug APK
