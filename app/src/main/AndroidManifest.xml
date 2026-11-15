@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <application
+        android:allowBackup="true"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="@xml/backup_rules"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.MyApplication">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:theme="@style/Theme.MyApplication">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Phone Home Screen Widget 1: Health & Core Integrity -->
+        <receiver
+            android:name=".widget.DigiHealthWidgetProvider"
+            android:exported="true"
+            android:label="@string/phone_widget_health_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.aistudio.digipulse.holovx.ACTION_AUTO_REFRESH_WIDGETS" />
+                <action android:name="android.intent.action.USER_PRESENT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_health" />
+        </receiver>
+
+        <!-- Phone Home Screen Widget 2: Stamina & Energy Core -->
+        <receiver
+            android:name=".widget.DigiStaminaWidgetProvider"
+            android:exported="true"
+            android:label="@string/phone_widget_stamina_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.aistudio.digipulse.holovx.ACTION_AUTO_REFRESH_WIDGETS" />
+                <action android:name="android.intent.action.USER_PRESENT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_stamina" />
+        </receiver>
+
+        <!-- Phone Home Screen Widget 3: Satiety & Hunger Meter -->
+        <receiver
+            android:name=".widget.DigiHungerWidgetProvider"
+            android:exported="true"
+            android:label="@string/phone_widget_hunger_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.aistudio.digipulse.holovx.ACTION_AUTO_REFRESH_WIDGETS" />
+                <action android:name="android.intent.action.USER_PRESENT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_hunger" />
+        </receiver>
+
+        <!-- Phone Home Screen Widget 4: Evolution Sync & Tamer Rank -->
+        <receiver
+            android:name=".widget.DigiEvolutionWidgetProvider"
+            android:exported="true"
+            android:label="@string/phone_widget_evolution_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.aistudio.digipulse.holovx.ACTION_AUTO_REFRESH_WIDGETS" />
+                <action android:name="android.intent.action.USER_PRESENT" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info_evolution" />
+        </receiver>
+    </application>
+
+</manifest>

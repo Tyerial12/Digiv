@@ -1,0 +1,448 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net: Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+    function incoming() {
+      return request.resource.data;
+    }
+    function existing() {
+      return resource.data;
+    }
+
+    // 3. Entity Validation Blueprints
+    function isValidDigimonCreature(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.nickname is string && data.nickname.size() >= 1 && data.nickname.size() <= 40 &&
+             data.speciesId is string && data.speciesId.size() >= 1 && data.speciesId.size() <= 40 &&
+             data.speciesName is string && data.speciesName.size() >= 1 && data.speciesName.size() <= 50 &&
+             data.stage is string && data.stage in ['Rookie', 'Champion', 'Ultimate', 'Mega'] &&
+             data.attribute is string && data.attribute in ['Vaccine', 'Data', 'Virus', 'Free'] &&
+             data.health is int && data.health >= 0 && data.health <= 100 &&
+             data.stamina is int && data.stamina >= 0 && data.stamina <= 100 &&
+             data.hunger is int && data.hunger >= 0 && data.hunger <= 100 &&
+             data.evolutionProgress is int && data.evolutionProgress >= 0 && data.evolutionProgress <= 100 &&
+             data.attack is int && data.attack >= 0 && data.attack <= 9999 &&
+             data.defense is int && data.defense >= 0 && data.defense <= 9999 &&
+             data.speed is int && data.speed >= 0 && data.speed <= 9999 &&
+             data.wisdom is int && data.wisdom >= 0 && data.wisdom <= 9999 &&
+             data.bondLevel is int && data.bondLevel >= 0 && data.bondLevel <= 100 &&
+             data.careMistakes is int && data.careMistakes >= 0 && data.careMistakes <= 999 &&
+             data.isResting is bool &&
+             data.unlockedForms is list && data.unlockedForms.size() <= 15 &&
+             (data.unlockedForms.size() == 0 || (data.unlockedForms[0] is string && data.unlockedForms[0].size() <= 40)) &&
+             data.lastUpdatedMs is int && data.lastUpdatedMs >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTrainingLogEntry(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.creatureId is string && data.creatureId.size() >= 1 && data.creatureId.size() <= 128 &&
+             data.creatureName is string && data.creatureName.size() >= 1 && data.creatureName.size() <= 50 &&
+             data.activityType is string && data.activityType in [
+               'Power Drill', 'Speed Drill', 'Defense Drill', 'Wisdom Drill',
+               'Nutrient Feed', 'Medical Care', 'Rest Cycle', 'Digivolution', 'Arena Sparring',
+               'Monster Trade', 'Mythic Ascension'
+             ] &&
+             data.grade is string && data.grade in ['S', 'A', 'B', 'C', 'CARE', 'EVO'] &&
+             data.statDeltaSummary is string && data.statDeltaSummary.size() >= 1 && data.statDeltaSummary.size() <= 160 &&
+             data.xpGained is int && data.xpGained >= 0 && data.xpGained <= 100000 &&
+             data.dateKey is string && data.dateKey.size() == 10 && data.dateKey.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidPetNotification(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.creatureId is string && data.creatureId.size() >= 1 && data.creatureId.size() <= 128 &&
+             data.creatureName is string && data.creatureName.size() >= 1 && data.creatureName.size() <= 50 &&
+             data.severity is string && data.severity in ['INFO', 'WARNING', 'CRITICAL', 'EVOLUTION'] &&
+             data.title is string && data.title.size() >= 1 && data.title.size() <= 80 &&
+             data.message is string && data.message.size() >= 1 && data.message.size() <= 280 &&
+             data.isRead is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.leagueId is string && data.leagueId == 'global' &&
+             data.trainerName is string && data.trainerName.size() >= 1 && data.trainerName.size() <= 40 &&
+             data.tamerTitle is string && data.tamerTitle.size() >= 1 && data.tamerTitle.size() <= 50 &&
+             data.partnerName is string && data.partnerName.size() >= 1 && data.partnerName.size() <= 50 &&
+             data.partnerStage is string && data.partnerStage in ['Rookie', 'Champion', 'Ultimate', 'Mega'] &&
+             data.partnerAttribute is string && data.partnerAttribute in ['Vaccine', 'Data', 'Virus', 'Free'] &&
+             data.totalCombatPower is int && data.totalCombatPower >= 0 && data.totalCombatPower <= 9999999 &&
+             data.evolutionsUnlocked is int && data.evolutionsUnlocked >= 1 && data.evolutionsUnlocked <= 500 &&
+             data.trainingStreakDays is int && data.trainingStreakDays >= 0 && data.trainingStreakDays <= 3650 &&
+             data.sparringWins is int && data.sparringWins >= 0 && data.sparringWins <= 999999 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidTradeListing(data) {
+      return data.creatorUserId is string && data.creatorUserId.size() >= 1 && data.creatorUserId.size() <= 128 &&
+             data.creatorTrainerName is string && data.creatorTrainerName.size() >= 1 && data.creatorTrainerName.size() <= 40 &&
+             data.offeredCreatureId is string && data.offeredCreatureId.size() >= 1 && data.offeredCreatureId.size() <= 128 &&
+             data.offeredNickname is string && data.offeredNickname.size() >= 1 && data.offeredNickname.size() <= 40 &&
+             data.offeredSpeciesId is string && data.offeredSpeciesId.size() >= 1 && data.offeredSpeciesId.size() <= 40 &&
+             data.offeredSpeciesName is string && data.offeredSpeciesName.size() >= 1 && data.offeredSpeciesName.size() <= 50 &&
+             data.offeredStage is string && data.offeredStage in ['Rookie', 'Champion', 'Ultimate', 'Mega'] &&
+             data.offeredAttribute is string && data.offeredAttribute in ['Vaccine', 'Data', 'Virus', 'Free'] &&
+             data.offeredLevel is int && data.offeredLevel >= 1 && data.offeredLevel <= 100 &&
+             data.offeredAttack is int && data.offeredAttack >= 0 && data.offeredAttack <= 9999 &&
+             data.offeredDefense is int && data.offeredDefense >= 0 && data.offeredDefense <= 9999 &&
+             data.offeredSpeed is int && data.offeredSpeed >= 0 && data.offeredSpeed <= 9999 &&
+             data.offeredWisdom is int && data.offeredWisdom >= 0 && data.offeredWisdom <= 9999 &&
+             data.offeredBondLevel is int && data.offeredBondLevel >= 0 && data.offeredBondLevel <= 100 &&
+             data.requestedStageOrSpecies is string && data.requestedStageOrSpecies.size() >= 1 && data.requestedStageOrSpecies.size() <= 50 &&
+             data.status is string && data.status in ['OPEN', 'COMPLETED', 'CANCELLED'] &&
+             data.accepterUserId is string && data.accepterUserId.size() <= 128 &&
+             data.accepterTrainerName is string && data.accepterTrainerName.size() <= 40 &&
+             data.tradedInNickname is string && data.tradedInNickname.size() <= 40 &&
+             data.tradedInSpeciesId is string && data.tradedInSpeciesId.size() <= 40 &&
+             data.tradedInSpeciesName is string && data.tradedInSpeciesName.size() <= 50 &&
+             data.tradedInStage is string && data.tradedInStage in ['Rookie', 'Champion', 'Ultimate', 'Mega'] &&
+             data.tradedInAttribute is string && data.tradedInAttribute in ['Vaccine', 'Data', 'Virus', 'Free'] &&
+             data.tradedInLevel is int && data.tradedInLevel >= 1 && data.tradedInLevel <= 100 &&
+             data.tradedInAttack is int && data.tradedInAttack >= 0 && data.tradedInAttack <= 9999 &&
+             data.tradedInDefense is int && data.tradedInDefense >= 0 && data.tradedInDefense <= 9999 &&
+             data.tradedInSpeed is int && data.tradedInSpeed >= 0 && data.tradedInSpeed <= 9999 &&
+             data.tradedInWisdom is int && data.tradedInWisdom >= 0 && data.tradedInWisdom <= 9999 &&
+             data.tradedInBondLevel is int && data.tradedInBondLevel >= 0 && data.tradedInBondLevel <= 100 &&
+              data.claimedByCreator is bool &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidChatMessage(data) {
+      return data.senderUserId is string && data.senderUserId == request.auth.uid && data.senderUserId.size() >= 1 && data.senderUserId.size() <= 128 &&
+             data.senderTrainerName is string && data.senderTrainerName.size() >= 1 && data.senderTrainerName.size() <= 40 &&
+             data.senderPartnerName is string && data.senderPartnerName.size() >= 1 && data.senderPartnerName.size() <= 50 &&
+             data.senderPartnerStage is string && data.senderPartnerStage in ['Rookie', 'Champion', 'Ultimate', 'Mega'] &&
+             data.recipientUserId is string && data.recipientUserId.size() <= 128 &&
+             data.channelId is string && data.channelId.size() >= 1 && data.channelId.size() <= 160 &&
+             data.messageText is string && data.messageText.size() >= 1 && data.messageText.size() <= 300 &&
+             data.createdAt is timestamp && data.createdAt <= request.time;
+    }
+
+    function isValidFriendConnection(data) {
+      return data.requesterUserId is string && data.requesterUserId.size() >= 1 && data.requesterUserId.size() <= 128 &&
+             data.requesterTrainerName is string && data.requesterTrainerName.size() >= 1 && data.requesterTrainerName.size() <= 40 &&
+             data.requesterPartnerName is string && data.requesterPartnerName.size() >= 1 && data.requesterPartnerName.size() <= 50 &&
+             data.recipientUserId is string && data.recipientUserId.size() >= 1 && data.recipientUserId.size() <= 128 &&
+             data.recipientTrainerName is string && data.recipientTrainerName.size() >= 1 && data.recipientTrainerName.size() <= 40 &&
+             data.recipientPartnerName is string && data.recipientPartnerName.size() >= 1 && data.recipientPartnerName.size() <= 50 &&
+             data.status is string && data.status in ['PENDING', 'ACCEPTED'] &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    // 4. User-Scoped Subcollections
+    match /users/{userId}/creatures/{creatureId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(creatureId);
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(creatureId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'nickname', 'speciesId', 'speciesName', 'stage', 'attribute',
+                         'health', 'stamina', 'hunger', 'evolutionProgress', 'attack', 'defense',
+                         'speed', 'wisdom', 'bondLevel', 'careMistakes', 'isResting',
+                         'unlockedForms', 'lastUpdatedMs', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'nickname', 'speciesId', 'speciesName', 'stage', 'attribute',
+                         'health', 'stamina', 'hunger', 'evolutionProgress', 'attack', 'defense',
+                         'speed', 'wisdom', 'bondLevel', 'careMistakes', 'isResting',
+                         'unlockedForms', 'lastUpdatedMs', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidDigimonCreature(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidDigimonCreature(incoming()) &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(creatureId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'nickname', 'speciesId', 'speciesName', 'stage', 'attribute',
+                         'health', 'stamina', 'hunger', 'evolutionProgress', 'attack', 'defense',
+                         'speed', 'wisdom', 'bondLevel', 'careMistakes', 'isResting',
+                         'unlockedForms', 'lastUpdatedMs', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(creatureId);
+    }
+
+    match /users/{userId}/trainingLogs/{logId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(logId);
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(logId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'creatureId', 'creatureName', 'activityType', 'grade',
+                         'statDeltaSummary', 'xpGained', 'dateKey', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'creatureId', 'creatureName', 'activityType', 'grade',
+                         'statDeltaSummary', 'xpGained', 'dateKey', 'createdAt'
+                       ]) &&
+                       isValidTrainingLogEntry(incoming());
+
+      allow update: if false;
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(logId);
+    }
+
+    match /users/{userId}/notifications/{notifId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(notifId);
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(notifId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'creatureId', 'creatureName', 'severity',
+                         'title', 'message', 'isRead', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'creatureId', 'creatureName', 'severity',
+                         'title', 'message', 'isRead', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidPetNotification(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidPetNotification(incoming()) &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(notifId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().creatureId == existing().creatureId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['isRead', 'updatedAt']);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(notifId);
+    }
+
+    // 5. Global Social Leaderboard Collection (Scoped by leagueId == 'global' on read, owner-only write)
+    match /leaderboard/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && (resource == null || existing().leagueId == 'global');
+      allow list: if isSignedIn() && existing().leagueId == 'global';
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'leagueId', 'trainerName', 'tamerTitle', 'partnerName',
+                         'partnerStage', 'partnerAttribute', 'totalCombatPower',
+                         'evolutionsUnlocked', 'trainingStreakDays', 'sparringWins',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'leagueId', 'trainerName', 'tamerTitle', 'partnerName',
+                         'partnerStage', 'partnerAttribute', 'totalCombatPower',
+                         'evolutionsUnlocked', 'trainingStreakDays', 'sparringWins',
+                         'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidLeaderboardEntry(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidLeaderboardEntry(incoming()) &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().leagueId == existing().leagueId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'trainerName', 'tamerTitle', 'partnerName', 'partnerStage',
+                         'partnerAttribute', 'totalCombatPower', 'evolutionsUnlocked',
+                         'trainingStreakDays', 'sparringWins', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId);
+    }
+
+    // 6. Global Player-to-Player Monster Trade Exchange
+    match /tradeListings/{tradeId} {
+      allow get: if isSignedIn() && isValidId(tradeId) && (
+        resource == null ||
+        existing().status == 'OPEN' ||
+        existing().creatorUserId == request.auth.uid ||
+        existing().accepterUserId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        existing().status == 'OPEN' ||
+        existing().creatorUserId == request.auth.uid ||
+        existing().accepterUserId == request.auth.uid
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(tradeId) &&
+                       incoming().creatorUserId == request.auth.uid &&
+                       incoming().status == 'OPEN' &&
+                       incoming().accepterUserId == '' &&
+                       incoming().claimedByCreator == false &&
+                       incoming().keys().hasAll([
+                         'creatorUserId', 'creatorTrainerName', 'offeredCreatureId', 'offeredNickname',
+                         'offeredSpeciesId', 'offeredSpeciesName', 'offeredStage', 'offeredAttribute',
+                         'offeredLevel', 'offeredAttack', 'offeredDefense', 'offeredSpeed',
+                         'offeredWisdom', 'offeredBondLevel', 'requestedStageOrSpecies', 'status',
+                         'accepterUserId', 'accepterTrainerName', 'tradedInNickname', 'tradedInSpeciesId',
+                         'tradedInSpeciesName', 'tradedInStage', 'tradedInAttribute', 'tradedInLevel',
+                         'tradedInAttack', 'tradedInDefense', 'tradedInSpeed', 'tradedInWisdom',
+                         'tradedInBondLevel', 'claimedByCreator', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'creatorUserId', 'creatorTrainerName', 'offeredCreatureId', 'offeredNickname',
+                         'offeredSpeciesId', 'offeredSpeciesName', 'offeredStage', 'offeredAttribute',
+                         'offeredLevel', 'offeredAttack', 'offeredDefense', 'offeredSpeed',
+                         'offeredWisdom', 'offeredBondLevel', 'requestedStageOrSpecies', 'status',
+                         'accepterUserId', 'accepterTrainerName', 'tradedInNickname', 'tradedInSpeciesId',
+                         'tradedInSpeciesName', 'tradedInStage', 'tradedInAttribute', 'tradedInLevel',
+                         'tradedInAttack', 'tradedInDefense', 'tradedInSpeed', 'tradedInWisdom',
+                         'tradedInBondLevel', 'claimedByCreator', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidTradeListing(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(tradeId) &&
+                       isValidTradeListing(incoming()) &&
+                       incoming().creatorUserId == existing().creatorUserId &&
+                       incoming().offeredCreatureId == existing().offeredCreatureId &&
+                       incoming().offeredSpeciesId == existing().offeredSpeciesId &&
+                       incoming().createdAt == existing().createdAt && (
+                         // Action 1: Another player accepts an OPEN trade listing
+                         (existing().status == 'OPEN' &&
+                          request.auth.uid != existing().creatorUserId &&
+                          incoming().status == 'COMPLETED' &&
+                          incoming().accepterUserId == request.auth.uid &&
+                          incoming().tradedInSpeciesId.size() >= 1 &&
+                          incoming().tradedInNickname.size() >= 1 &&
+                          incoming().claimedByCreator == false &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'status', 'accepterUserId', 'accepterTrainerName',
+                            'tradedInNickname', 'tradedInSpeciesId', 'tradedInSpeciesName',
+                            'tradedInStage', 'tradedInAttribute', 'tradedInLevel',
+                            'tradedInAttack', 'tradedInDefense', 'tradedInSpeed',
+                            'tradedInWisdom', 'tradedInBondLevel', 'updatedAt'
+                          ])) ||
+                         // Action 2: Original creator claims the traded-in monster from a COMPLETED listing
+                         (existing().status == 'COMPLETED' &&
+                          existing().claimedByCreator == false &&
+                          request.auth.uid == existing().creatorUserId &&
+                          incoming().status == 'COMPLETED' &&
+                          incoming().claimedByCreator == true &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'claimedByCreator', 'updatedAt'
+                          ])) ||
+                         // Action 3: Original creator cancels their OPEN listing
+                         (existing().status == 'OPEN' &&
+                          request.auth.uid == existing().creatorUserId &&
+                          incoming().status == 'CANCELLED' &&
+                          incoming().diff(existing()).affectedKeys().hasOnly([
+                            'status', 'updatedAt'
+                          ]))
+                       );
+
+      allow delete: if isSignedIn() && isValidId(tradeId) && existing().creatorUserId == request.auth.uid;
+    }
+
+    // 7. Global & Friend Direct Chat Messages
+    match /chatMessages/{messageId} {
+      allow get: if isSignedIn() && isValidId(messageId) && (
+        resource == null ||
+        existing().channelId == 'global' ||
+        existing().senderUserId == request.auth.uid ||
+        existing().recipientUserId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        existing().channelId == 'global' ||
+        existing().senderUserId == request.auth.uid ||
+        existing().recipientUserId == request.auth.uid
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(messageId) &&
+                       incoming().senderUserId == request.auth.uid &&
+                       incoming().keys().hasAll([
+                         'senderUserId', 'senderTrainerName', 'senderPartnerName',
+                         'senderPartnerStage', 'recipientUserId', 'channelId',
+                         'messageText', 'createdAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'senderUserId', 'senderTrainerName', 'senderPartnerName',
+                         'senderPartnerStage', 'recipientUserId', 'channelId',
+                         'messageText', 'createdAt'
+                       ]) &&
+                       isValidChatMessage(incoming());
+
+      allow update: if false;
+      allow delete: if isSignedIn() && isValidId(messageId) && existing().senderUserId == request.auth.uid;
+    }
+
+    // 8. Real-Life Player Friendships
+    match /friendships/{friendshipId} {
+      allow get: if isSignedIn() && isValidId(friendshipId) && (
+        resource == null ||
+        existing().requesterUserId == request.auth.uid ||
+        existing().recipientUserId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        existing().requesterUserId == request.auth.uid ||
+        existing().recipientUserId == request.auth.uid
+      );
+
+      allow create: if isSignedIn() &&
+                       isValidId(friendshipId) &&
+                       incoming().requesterUserId == request.auth.uid &&
+                       incoming().recipientUserId != request.auth.uid &&
+                       incoming().status == 'PENDING' &&
+                       incoming().keys().hasAll([
+                         'requesterUserId', 'requesterTrainerName', 'requesterPartnerName',
+                         'recipientUserId', 'recipientTrainerName', 'recipientPartnerName',
+                         'status', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'requesterUserId', 'requesterTrainerName', 'requesterPartnerName',
+                         'recipientUserId', 'recipientTrainerName', 'recipientPartnerName',
+                         'status', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidFriendConnection(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidId(friendshipId) &&
+                       isValidFriendConnection(incoming()) &&
+                       existing().status == 'PENDING' &&
+                       request.auth.uid == existing().recipientUserId &&
+                       incoming().requesterUserId == existing().requesterUserId &&
+                       incoming().recipientUserId == existing().recipientUserId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().status == 'ACCEPTED' &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'status', 'recipientTrainerName', 'recipientPartnerName', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && isValidId(friendshipId) && (
+        existing().requesterUserId == request.auth.uid ||
+        existing().recipientUserId == request.auth.uid
+      );
+    }
+  }
+}

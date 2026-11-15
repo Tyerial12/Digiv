@@ -1,0 +1,6 @@
+{
+  "name": "Digi Verse",
+  "description": "Cyber-holo virtual pet training dashboard with a 4-widget real-time telemetry grid, interactive training drills, branching evolutions, daily logs, and social leaderboards.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

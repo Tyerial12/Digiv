@@ -1,0 +1,629 @@
+{
+  "entities": {
+    "DigimonCreature": {
+      "title": "DigimonCreature",
+      "description": "An individual Digimon partner raised and trained by a user, with real-time health, stamina, hunger, and evolution progress telemetry.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the owning trainer."
+        },
+        "nickname": {
+          "type": "string",
+          "description": "Custom nickname of the Digimon partner."
+        },
+        "speciesId": {
+          "type": "string",
+          "description": "Identifier for the current Digimon species form (e.g., agumon, greymon, wargreymon, omegamon_x)."
+        },
+        "speciesName": {
+          "type": "string",
+          "description": "Display name of the current Digimon species."
+        },
+        "stage": {
+          "type": "string",
+          "enum": ["Rookie", "Champion", "Ultimate", "Mega"],
+          "description": "Current Digivolution stage."
+        },
+        "attribute": {
+          "type": "string",
+          "enum": ["Vaccine", "Data", "Virus", "Free"],
+          "description": "Elemental attribute of the Digimon."
+        },
+        "health": {
+          "type": "integer",
+          "description": "Real-time health integrity level from 0 to 100."
+        },
+        "stamina": {
+          "type": "integer",
+          "description": "Real-time stamina energy core level from 0 to 100."
+        },
+        "hunger": {
+          "type": "integer",
+          "description": "Real-time satiety/fullness level from 0 to 100 (100 = full, 0 = starving)."
+        },
+        "evolutionProgress": {
+          "type": "integer",
+          "description": "Digivolution sync progress percentage from 0 to 100."
+        },
+        "attack": {
+          "type": "integer",
+          "description": "Offensive power stat."
+        },
+        "defense": {
+          "type": "integer",
+          "description": "Defensive shield stat."
+        },
+        "speed": {
+          "type": "integer",
+          "description": "Agility and reflex stat."
+        },
+        "wisdom": {
+          "type": "integer",
+          "description": "Tactical intelligence and cipher stat."
+        },
+        "bondLevel": {
+          "type": "integer",
+          "description": "Tamer bond sync level from 0 to 100."
+        },
+        "careMistakes": {
+          "type": "integer",
+          "description": "Accumulated care mistakes affecting branching evolution."
+        },
+        "isResting": {
+          "type": "boolean",
+          "description": "Whether the creature is currently in accelerated rest/recovery mode."
+        },
+        "unlockedForms": {
+          "type": "array",
+          "description": "Bounded list of speciesIds unlocked in this creature's lineage (max 15)."
+        },
+        "lastUpdatedMs": {
+          "type": "integer",
+          "description": "Epoch milliseconds of last real-time stat synchronization."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when creature was hatched. Clients must submit FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when creature state was last updated. Clients must submit FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "nickname",
+        "speciesId",
+        "speciesName",
+        "stage",
+        "attribute",
+        "health",
+        "stamina",
+        "hunger",
+        "evolutionProgress",
+        "attack",
+        "defense",
+        "speed",
+        "wisdom",
+        "bondLevel",
+        "careMistakes",
+        "isResting",
+        "unlockedForms",
+        "lastUpdatedMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TrainingLogEntry": {
+      "title": "TrainingLogEntry",
+      "description": "A chronological daily training or care log entry recorded for a trainer's Digimon.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the owning trainer."
+        },
+        "creatureId": {
+          "type": "string",
+          "description": "Document ID of the Digimon creature."
+        },
+        "creatureName": {
+          "type": "string",
+          "description": "Name of the Digimon at the time of training."
+        },
+        "activityType": {
+          "type": "string",
+          "enum": ["Power Drill", "Speed Drill", "Defense Drill", "Wisdom Drill", "Nutrient Feed", "Medical Care", "Rest Cycle", "Digivolution", "Arena Sparring", "Monster Trade", "Mythic Ascension"],
+          "description": "Category of the training or care event."
+        },
+        "grade": {
+          "type": "string",
+          "enum": ["S", "A", "B", "C", "CARE", "EVO"],
+          "description": "Performance rating of the drill or action."
+        },
+        "statDeltaSummary": {
+          "type": "string",
+          "description": "Human-readable telemetry delta summary (e.g., '+12 ATK, +15% EVO, -15 STA')."
+        },
+        "xpGained": {
+          "type": "integer",
+          "description": "Combat power / XP earned from the session."
+        },
+        "dateKey": {
+          "type": "string",
+          "description": "ISO date key YYYY-MM-DD for daily grouping."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the log entry was created. Clients must submit FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "creatureId",
+        "creatureName",
+        "activityType",
+        "grade",
+        "statDeltaSummary",
+        "xpGained",
+        "dateKey",
+        "createdAt"
+      ]
+    },
+    "PetNotification": {
+      "title": "PetNotification",
+      "description": "A real-time status alert generated for a trainer's Digimon (hunger, stamina, health, evolution, or trade).",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the owning trainer."
+        },
+        "creatureId": {
+          "type": "string",
+          "description": "Document ID of the associated creature."
+        },
+        "creatureName": {
+          "type": "string",
+          "description": "Display name of the creature."
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["INFO", "WARNING", "CRITICAL", "EVOLUTION"],
+          "description": "Alert severity tier."
+        },
+        "title": {
+          "type": "string",
+          "description": "Short alert title."
+        },
+        "message": {
+          "type": "string",
+          "description": "Detailed status message and recommended care action."
+        },
+        "isRead": {
+          "type": "boolean",
+          "description": "Whether the trainer has acknowledged this notification."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the notification was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the notification was last updated."
+        }
+      },
+      "required": [
+        "userId",
+        "creatureId",
+        "creatureName",
+        "severity",
+        "title",
+        "message",
+        "isRead",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public trainer ranking record for global social leaderboard competition.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the trainer (matches document ID)."
+        },
+        "leagueId": {
+          "type": "string",
+          "enum": ["global"],
+          "description": "League partition key for scoped leaderboard queries."
+        },
+        "trainerName": {
+          "type": "string",
+          "description": "Public callsign of the Tamer (no PII)."
+        },
+        "tamerTitle": {
+          "type": "string",
+          "description": "Earned Tamer title badge."
+        },
+        "partnerName": {
+          "type": "string",
+          "description": "Lead Digimon partner's species/nickname."
+        },
+        "partnerStage": {
+          "type": "string",
+          "enum": ["Rookie", "Champion", "Ultimate", "Mega"],
+          "description": "Evolution stage of the lead Digimon."
+        },
+        "partnerAttribute": {
+          "type": "string",
+          "enum": ["Vaccine", "Data", "Virus", "Free"],
+          "description": "Attribute of the lead Digimon."
+        },
+        "totalCombatPower": {
+          "type": "integer",
+          "description": "Combined squad combat power score."
+        },
+        "evolutionsUnlocked": {
+          "type": "integer",
+          "description": "Total number of Digivolution forms unlocked."
+        },
+        "trainingStreakDays": {
+          "type": "integer",
+          "description": "Active daily training streak count."
+        },
+        "sparringWins": {
+          "type": "integer",
+          "description": "Total arena sparring victories."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when leaderboard entry was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when leaderboard entry was last updated."
+        }
+      },
+      "required": [
+        "userId",
+        "leagueId",
+        "trainerName",
+        "tamerTitle",
+        "partnerName",
+        "partnerStage",
+        "partnerAttribute",
+        "totalCombatPower",
+        "evolutionsUnlocked",
+        "trainingStreakDays",
+        "sparringWins",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TradeListing": {
+      "title": "TradeListing",
+      "description": "Real-time player-to-player monster trade listing on the Global Holo-Trade Exchange.",
+      "type": "object",
+      "properties": {
+        "creatorUserId": {
+          "type": "string",
+          "description": "UID of the trainer who posted the monster for trade."
+        },
+        "creatorTrainerName": {
+          "type": "string",
+          "description": "Public callsign of the offering trainer."
+        },
+        "offeredCreatureId": {
+          "type": "string",
+          "description": "Original creature ID offered by the creator."
+        },
+        "offeredNickname": {
+          "type": "string",
+          "description": "Nickname of the offered monster."
+        },
+        "offeredSpeciesId": {
+          "type": "string",
+          "description": "Species ID of the offered monster."
+        },
+        "offeredSpeciesName": {
+          "type": "string",
+          "description": "Species display name of the offered monster."
+        },
+        "offeredStage": {
+          "type": "string",
+          "enum": ["Rookie", "Champion", "Ultimate", "Mega"],
+          "description": "Evolution stage of the offered monster."
+        },
+        "offeredAttribute": {
+          "type": "string",
+          "enum": ["Vaccine", "Data", "Virus", "Free"],
+          "description": "Attribute of the offered monster."
+        },
+        "offeredLevel": {
+          "type": "integer",
+          "description": "Level (1-100) of the offered monster."
+        },
+        "offeredAttack": {
+          "type": "integer",
+          "description": "Attack stat of the offered monster."
+        },
+        "offeredDefense": {
+          "type": "integer",
+          "description": "Defense stat of the offered monster."
+        },
+        "offeredSpeed": {
+          "type": "integer",
+          "description": "Speed stat of the offered monster."
+        },
+        "offeredWisdom": {
+          "type": "integer",
+          "description": "Wisdom stat of the offered monster."
+        },
+        "offeredBondLevel": {
+          "type": "integer",
+          "description": "Bond level of the offered monster."
+        },
+        "requestedStageOrSpecies": {
+          "type": "string",
+          "description": "Requested stage or species preference from trade partner."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["OPEN", "COMPLETED", "CANCELLED"],
+          "description": "Current trade listing status."
+        },
+        "accepterUserId": {
+          "type": "string",
+          "description": "UID of the real player who accepted the trade (empty while OPEN)."
+        },
+        "accepterTrainerName": {
+          "type": "string",
+          "description": "Public callsign of the accepting player."
+        },
+        "tradedInNickname": {
+          "type": "string",
+          "description": "Nickname of the monster traded in by the accepting player."
+        },
+        "tradedInSpeciesId": {
+          "type": "string",
+          "description": "Species ID of the monster traded in by the accepting player."
+        },
+        "tradedInSpeciesName": {
+          "type": "string",
+          "description": "Species display name of the monster traded in."
+        },
+        "tradedInStage": {
+          "type": "string",
+          "enum": ["Rookie", "Champion", "Ultimate", "Mega"],
+          "description": "Stage of the monster traded in."
+        },
+        "tradedInAttribute": {
+          "type": "string",
+          "enum": ["Vaccine", "Data", "Virus", "Free"],
+          "description": "Attribute of the monster traded in."
+        },
+        "tradedInLevel": {
+          "type": "integer",
+          "description": "Level (1-100) of the monster traded in."
+        },
+        "tradedInAttack": {
+          "type": "integer",
+          "description": "Attack stat of the monster traded in."
+        },
+        "tradedInDefense": {
+          "type": "integer",
+          "description": "Defense stat of the monster traded in."
+        },
+        "tradedInSpeed": {
+          "type": "integer",
+          "description": "Speed stat of the monster traded in."
+        },
+        "tradedInWisdom": {
+          "type": "integer",
+          "description": "Wisdom stat of the monster traded in."
+        },
+        "tradedInBondLevel": {
+          "type": "integer",
+          "description": "Bond level of the monster traded in."
+        },
+        "claimedByCreator": {
+          "type": "boolean",
+          "description": "Whether the original creator has received the traded-in monster."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when trade listing was created. Clients must submit FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when trade listing was last updated. Clients must submit FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "creatorUserId",
+        "creatorTrainerName",
+        "offeredCreatureId",
+        "offeredNickname",
+        "offeredSpeciesId",
+        "offeredSpeciesName",
+        "offeredStage",
+        "offeredAttribute",
+        "offeredLevel",
+        "offeredAttack",
+        "offeredDefense",
+        "offeredSpeed",
+        "offeredWisdom",
+        "offeredBondLevel",
+        "requestedStageOrSpecies",
+        "status",
+        "accepterUserId",
+        "accepterTrainerName",
+        "tradedInNickname",
+        "tradedInSpeciesId",
+        "tradedInSpeciesName",
+        "tradedInStage",
+        "tradedInAttribute",
+        "tradedInLevel",
+        "tradedInAttack",
+        "tradedInDefense",
+        "tradedInSpeed",
+        "tradedInWisdom",
+        "tradedInBondLevel",
+        "claimedByCreator",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ChatMessage": {
+      "title": "ChatMessage",
+      "description": "Real-time chat message sent by a trainer in the Global Tamer Chat or a Direct Friend Chat.",
+      "type": "object",
+      "properties": {
+        "senderUserId": {
+          "type": "string",
+          "description": "UID of the sender."
+        },
+        "senderTrainerName": {
+          "type": "string",
+          "description": "Callsign of the sender."
+        },
+        "senderPartnerName": {
+          "type": "string",
+          "description": "Active Digimon partner name of the sender."
+        },
+        "senderPartnerStage": {
+          "type": "string",
+          "enum": ["Rookie", "Champion", "Ultimate", "Mega"],
+          "description": "Stage of the sender's active partner."
+        },
+        "recipientUserId": {
+          "type": "string",
+          "description": "UID of the direct message recipient (empty string for global chat)."
+        },
+        "channelId": {
+          "type": "string",
+          "description": "Channel identifier ('global' or 'dm_<uid1>_<uid2>')."
+        },
+        "messageText": {
+          "type": "string",
+          "description": "Chat message text content (1 to 300 chars)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the chat message was sent."
+        }
+      },
+      "required": [
+        "senderUserId",
+        "senderTrainerName",
+        "senderPartnerName",
+        "senderPartnerStage",
+        "recipientUserId",
+        "channelId",
+        "messageText",
+        "createdAt"
+      ]
+    },
+    "FriendConnection": {
+      "title": "FriendConnection",
+      "description": "Friend request or accepted friendship between two real-life players.",
+      "type": "object",
+      "properties": {
+        "requesterUserId": {
+          "type": "string",
+          "description": "UID of the player who sent the friend request."
+        },
+        "requesterTrainerName": {
+          "type": "string",
+          "description": "Callsign of the requester."
+        },
+        "requesterPartnerName": {
+          "type": "string",
+          "description": "Lead Digimon partner of the requester."
+        },
+        "recipientUserId": {
+          "type": "string",
+          "description": "UID of the player who received the friend request."
+        },
+        "recipientTrainerName": {
+          "type": "string",
+          "description": "Callsign of the recipient."
+        },
+        "recipientPartnerName": {
+          "type": "string",
+          "description": "Lead Digimon partner of the recipient."
+        },
+        "status": {
+          "type": "string",
+          "enum": ["PENDING", "ACCEPTED"],
+          "description": "Friendship status."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the friend request was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the friend request was last updated."
+        }
+      },
+      "required": [
+        "requesterUserId",
+        "requesterTrainerName",
+        "requesterPartnerName",
+        "recipientUserId",
+        "recipientTrainerName",
+        "recipientPartnerName",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}/creatures/{creatureId}": {
+      "schema": { "$ref": "#/entities/DigimonCreature" },
+      "description": "User-scoped Digimon squad creatures and real-time telemetry."
+    },
+    "/users/{userId}/trainingLogs/{logId}": {
+      "schema": { "$ref": "#/entities/TrainingLogEntry" },
+      "description": "User-scoped daily training and care history logs."
+    },
+    "/users/{userId}/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/PetNotification" },
+      "description": "User-scoped real-time pet status notifications."
+    },
+    "/leaderboard/{userId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Global social leaderboard rankings indexed by trainer UID."
+    },
+    "/tradeListings/{tradeId}": {
+      "schema": { "$ref": "#/entities/TradeListing" },
+      "description": "Global real-time player-to-player monster trade listings."
+    },
+    "/chatMessages/{messageId}": {
+      "schema": { "$ref": "#/entities/ChatMessage" },
+      "description": "Real-time global and friend direct chat messages."
+    },
+    "/friendships/{friendshipId}": {
+      "schema": { "$ref": "#/entities/FriendConnection" },
+      "description": "Player-to-player friend requests and accepted friendships."
+    }
+  }
+}
