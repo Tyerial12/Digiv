@@ -1,4 +1,4 @@
-# Digi Verse (v26.0)
+# Digi Verse (v2i.0)
 
 **Digi Verse** is an Android virtual monster raising, training, evolution, and real-time multiplayer tamer RPG built with Kotlin, Jetpack Compose (Material 3), Glance AppWidgets, and Firebase Firestore.
 
