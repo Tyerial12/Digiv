@@ -93,17 +93,24 @@ fun DrillsHubTab(
     nextDigiCoinTickSec: Int = DigimonCatalog.DIGI_COIN_INTERVAL_SEC,
     onCompleteDrill: (DrillType, Int) -> Unit,
     onStart24hOfflineTraining: () -> Unit = {},
+    onTogglePauseOfflineTraining: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var activeDrill by remember { mutableStateOf<DrillType?>(null) }
     val nowMs = System.currentTimeMillis()
     val isRecoveringFrom1Hp = activeCreature?.isRecoveringFrom1Hp(nowMs) == true
     val isInOfflineTraining = activeCreature?.isInOfflineTraining(nowMs) == true
-    val canAffordDrill = digiCoins >= DigimonCatalog.TRAINING_DRILL_COIN_COST && !isRecoveringFrom1Hp
-    val canAfford24hOffline = digiCoins >= DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST && !isRecoveringFrom1Hp && !isInOfflineTraining
+    val isOfflineTrainingPaused = activeCreature?.isOfflineTrainingPaused() == true
+    val hasOfflineTrainingSession = activeCreature?.hasOfflineTrainingSession(nowMs) == true
+    val canAffordDrill = digiCoins >= DigimonCatalog.TRAINING_DRILL_COIN_COST && !isRecoveringFrom1Hp && !hasOfflineTrainingSession
+    val canAfford24hOffline = digiCoins >= DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST && !isRecoveringFrom1Hp && !hasOfflineTrainingSession
     val nextCoinMins = nextDigiCoinTickSec / 60
     val nextCoinSecs = nextDigiCoinTickSec % 60
     val timerFormatted = "%d:%02d".format(java.util.Locale.US, nextCoinMins, nextCoinSecs)
+
+    if (hasOfflineTrainingSession && activeDrill != null) {
+        activeDrill = null
+    }
 
     Column(
         modifier = modifier
@@ -148,7 +155,12 @@ fun DrillsHubTab(
             }
         }
 
-        // 24-Hour Offline Auto-Training (100 DigiCoins for 24 Hours when App is Closed) Card
+        // 24-Hour Offline Auto-Training (100 DigiCoins for 24 Hours when App is Closed, with Pause & Restart Timer) Card
+        val offlineCardColor = when {
+            isOfflineTrainingPaused -> SolarCoralHunger
+            isInOfflineTraining -> BioEmeraldHealth
+            else -> EvolutionGoldSecondary
+        }
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -157,7 +169,7 @@ fun DrillsHubTab(
             colors = CardDefaults.cardColors(containerColor = HoloCardElevated),
             border = BorderStroke(
                 width = 1.5.dp,
-                color = if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary
+                color = offlineCardColor
             )
         ) {
             Column(
@@ -174,41 +186,57 @@ fun DrillsHubTab(
                     Text(
                         text = "24-HOUR OFFLINE AUTO-TRAINING",
                         style = MaterialTheme.typography.titleMedium,
-                        color = if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary
+                        color = offlineCardColor
                     )
                     Surface(
-                        color = (if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary).copy(alpha = 0.18f),
+                        color = offlineCardColor.copy(alpha = 0.18f),
                         shape = RoundedCornerShape(50),
-                        border = BorderStroke(1.dp, if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary)
+                        border = BorderStroke(1.dp, offlineCardColor)
                     ) {
                         Text(
-                            text = if (isInOfflineTraining && activeCreature != null) {
-                                "ACTIVE • ${activeCreature.formattedOfflineTrainingRemaining(nowMs)} LEFT"
-                            } else {
-                                "${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DIGICOINS / 24 HRS"
+                            text = when {
+                                isOfflineTrainingPaused && activeCreature != null ->
+                                    "PAUSED • ${activeCreature.formattedOfflineTrainingRemaining(nowMs)} SAVED"
+                                isInOfflineTraining && activeCreature != null ->
+                                    "ACTIVE • ${activeCreature.formattedOfflineTrainingRemaining(nowMs)} LEFT"
+                                else ->
+                                    "${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DIGICOINS / 24 HRS"
                             },
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary,
+                            color = offlineCardColor,
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
                 }
 
                 Text(
-                    text = if (isInOfflineTraining && activeCreature != null) {
-                        "✓ ${activeCreature.nickname} is training automatically for 24 hours (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} remaining)! Continues leveling (+2 ATK, +2 DEF, +2 SPD, +3 WIS & +4% Sync every 15m) even when the app is closed."
-                    } else {
-                        "Train ${activeCreature?.nickname ?: "your monster"} automatically for 24 hours — even when the app is closed — for ${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DigiCoins! Grants an immediate +1 Level kickoff plus automatic stat & level gains every 15m for 24h."
+                    text = when {
+                        isOfflineTrainingPaused && activeCreature != null ->
+                            "⏸ Offline Auto-Training is PAUSED (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} remaining). The countdown timer is frozen and will not tick down until you restart offline training! Once in offline training, you cannot train normally."
+                        isInOfflineTraining && activeCreature != null ->
+                            "✓ ${activeCreature.nickname} is in 24-Hour Offline Auto-Training (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} remaining)! Continues leveling (+2 ATK, +2 DEF, +2 SPD, +3 WIS & +4% Sync every 15m) even when the app is closed. Once in offline training, you cannot train normally — tap below to pause the timer anytime."
+                        else ->
+                            "Train ${activeCreature?.nickname ?: "your monster"} automatically for 24 hours — even when the app is closed — for ${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DigiCoins! Once in offline training you cannot train normally, and you can pause & restart the 24h timer anytime."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White
                 )
 
                 Button(
-                    onClick = onStart24hOfflineTraining,
-                    enabled = activeCreature != null && canAfford24hOffline,
+                    onClick = {
+                        if (hasOfflineTrainingSession) {
+                            onTogglePauseOfflineTraining()
+                        } else {
+                            onStart24hOfflineTraining()
+                        }
+                    },
+                    enabled = activeCreature != null && !isRecoveringFrom1Hp && (hasOfflineTrainingSession || canAfford24hOffline),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isInOfflineTraining) BioEmeraldHealth else EvolutionGoldSecondary,
+                        containerColor = when {
+                            isOfflineTrainingPaused -> BioEmeraldHealth
+                            isInOfflineTraining -> SolarCoralHunger
+                            else -> EvolutionGoldSecondary
+                        },
                         contentColor = CyberVoidBg
                     ),
                     shape = RoundedCornerShape(12.dp),
@@ -221,8 +249,10 @@ fun DrillsHubTab(
                         text = when {
                             isRecoveringFrom1Hp && activeCreature != null ->
                                 "RECOVERING FROM 1 HP (${activeCreature.formattedRecoveryRemaining(nowMs)} LEFT)"
+                            isOfflineTrainingPaused && activeCreature != null ->
+                                "▶ RESTART OFFLINE TRAINING (RESUME ${activeCreature.formattedOfflineTrainingRemaining(nowMs)} TIMER)"
                             isInOfflineTraining && activeCreature != null ->
-                                "24H OFFLINE TRAINING ACTIVE (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} LEFT)"
+                                "⏸ PAUSE OFFLINE TRAINING (FREEZE TIMER AT ${activeCreature.formattedOfflineTrainingRemaining(nowMs)})"
                             digiCoins >= DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST ->
                                 "START 24H OFFLINE TRAINING (${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DIGICOINS)"
                             else ->
@@ -294,7 +324,7 @@ fun DrillsHubTab(
             }
         }
 
-        if (activeDrill != null && activeCreature != null && !isRecoveringFrom1Hp) {
+        if (activeDrill != null && activeCreature != null && !isRecoveringFrom1Hp && !hasOfflineTrainingSession) {
             InteractiveMiniDrillCard(
                 creature = activeCreature,
                 drillType = activeDrill!!,
@@ -391,6 +421,10 @@ fun DrillsHubTab(
                                 text = when {
                                     isRecoveringFrom1Hp && activeCreature != null ->
                                         "RECOVERING FROM 1 HP (${activeCreature.formattedRecoveryRemaining(nowMs)} LEFT)"
+                                    isOfflineTrainingPaused && activeCreature != null ->
+                                        "LOCKED — IN OFFLINE TRAINING (PAUSED • ${activeCreature.formattedOfflineTrainingRemaining(nowMs)} LEFT)"
+                                    isInOfflineTraining && activeCreature != null ->
+                                        "LOCKED — CANNOT TRAIN NORMALLY IN OFFLINE TRAINING (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} LEFT)"
                                     canAffordDrill ->
                                         "START TRAINING DRILL (${DigimonCatalog.TRAINING_DRILL_COIN_COST} DIGICOINS)"
                                     else ->
@@ -1063,12 +1097,12 @@ fun StarterTrioDraftContent(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "CHOOSE 1 ROOKIE STARTER MONSTER",
+                            text = "CHOOSE 1 OF 10 ROOKIE STARTERS",
                             style = MaterialTheme.typography.headlineMedium,
                             color = HoloCyanPrimary
                         )
                         Text(
-                            text = "ROOKIE STAGE ONLY • 200 DIGICOINS (NEW GAME ONLY)",
+                            text = "10 ROOKIE CHOICES • UNIQUE STATS & ABILITIES • 200 DIGICOINS (NEW GAME)",
                             style = MaterialTheme.typography.labelSmall,
                             color = BioEmeraldHealth
                         )
@@ -1094,7 +1128,7 @@ fun StarterTrioDraftContent(
                     }
                 }
                 Text(
-                    text = "New Game Rule: You start with 200 DigiCoins on a New Game only, and can ONLY choose a Rookie-stage monster as your starter! Higher stages unlock at LVL 20+.",
+                    text = "New Player Guide: Pick 1 of the 10 Rookie Digital Monsters below! Each starter has distinct ATK/DEF/SPD/WIS stats, a Signature Move, and a unique Passive Ability. You start a New Game with 200 DigiCoins and evolve at LVL 20+!",
                     style = MaterialTheme.typography.bodySmall,
                     color = EvolutionGoldSecondary
                 )
@@ -1113,7 +1147,7 @@ fun StarterTrioDraftContent(
                             .clickable { stageLockNotice = null }
                     ) {
                         Text(
-                            text = "✓ ROOKIE",
+                            text = "✓ ROOKIE (10)",
                             style = MaterialTheme.typography.labelSmall,
                             color = BioEmeraldHealth,
                             textAlign = TextAlign.Center,
@@ -1158,17 +1192,62 @@ fun StarterTrioDraftContent(
                         )
                     }
                 }
+
+                // Selected Digital Monster Live Spotlight Preview (Stats + Unique Ability)
+                val chosenAccent = Color(chosenSpec.primaryColorHex)
+                Surface(
+                    color = HoloSlateSurface,
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.5.dp, chosenAccent),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        DigimonHoloCrestAvatar(
+                            speciesId = chosenSpec.speciesId,
+                            stage = "Rookie",
+                            isResting = false,
+                            evolutionReady = true,
+                            sizeDp = 56.dp
+                        )
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
+                            Text(
+                                text = "SELECTED: ${chosenSpec.speciesName.uppercase()} (${chosenSpec.attribute.uppercase()} ROOKIE)",
+                                style = MaterialTheme.typography.titleSmall,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "ATK ${chosenSpec.baseAttack} • DEF ${chosenSpec.baseDefense} • SPD ${chosenSpec.baseSpeed} • WIS ${chosenSpec.baseWisdom} • Move: ${chosenSpec.signatureMove}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = HoloCyanPrimary
+                            )
+                            Text(
+                                text = "⚡ ABILITY — ${chosenSpec.resolvedAbilityName()}: ${chosenSpec.resolvedAbilityDescription()}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = EvolutionGoldSecondary
+                            )
+                        }
+                    }
+                }
             }
         }
 
-        // Scrollable Rookie Starter Cards & Nickname
+        // Scrollable 10 Rookie Starter Cards & Nickname
         Column(
             modifier = Modifier
                 .weight(1f, fill = false)
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            rookieStarterSpecs.forEach { spec ->
+            rookieStarterSpecs.forEachIndexed { idx, spec ->
                 val isSelected = spec.speciesId == chosenSpec.speciesId
                 val accent = Color(spec.primaryColorHex)
 
@@ -1201,16 +1280,19 @@ fun StarterTrioDraftContent(
                             stage = "Rookie",
                             isResting = false,
                             evolutionReady = isSelected,
-                            sizeDp = 46.dp
+                            sizeDp = 52.dp
                         )
-                        Column(modifier = Modifier.weight(1f)) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(3.dp)
+                        ) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Text(
-                                    text = "${spec.speciesName} — ROOKIE (LVL 1)",
+                                    text = "#${idx + 1} ${spec.speciesName} — ROOKIE (LVL 1)",
                                     style = MaterialTheme.typography.titleMedium,
                                     color = Color.White,
                                     modifier = Modifier.weight(1f)
@@ -1220,7 +1302,7 @@ fun StarterTrioDraftContent(
                                     shape = RoundedCornerShape(50)
                                 ) {
                                     Text(
-                                        text = if (isSelected) "SELECTED ROOKIE" else "ROOKIE ONLY",
+                                        text = if (isSelected) "SELECTED" else spec.attribute.uppercase(),
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (isSelected) CyberVoidBg else BioEmeraldHealth,
                                         modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
@@ -1228,15 +1310,22 @@ fun StarterTrioDraftContent(
                                 }
                             }
                             Text(
-                                text = "Stage: Rookie • Attribute: ${spec.attribute} • Move: ${spec.signatureMove}",
+                                text = "ATK ${spec.baseAttack} • DEF ${spec.baseDefense} • SPD ${spec.baseSpeed} • WIS ${spec.baseWisdom} • Move: ${spec.signatureMove}",
                                 style = MaterialTheme.typography.labelMedium,
-                                color = EvolutionGoldSecondary
+                                color = HoloCyanPrimary
                             )
-                            Text(
-                                text = "ATK ${spec.baseAttack} • DEF ${spec.baseDefense} • SPD ${spec.baseSpeed} • WIS ${spec.baseWisdom}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Surface(
+                                color = EvolutionGoldSecondary.copy(alpha = 0.14f),
+                                shape = RoundedCornerShape(8.dp),
+                                border = BorderStroke(1.dp, EvolutionGoldSecondary.copy(alpha = 0.45f))
+                            ) {
+                                Text(
+                                    text = "⚡ Ability: ${spec.resolvedAbilityName()} — ${spec.resolvedAbilityDescription()}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = EvolutionGoldSecondary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
                         }
                     }
                 }

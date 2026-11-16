@@ -36,6 +36,8 @@ data class DigimonCreature(
     val completedExpeditionsCount: Int = 0,
     val offlineTrainingEndMs: Long = 0L,
     val offlineTrainingLastTickMs: Long = 0L,
+    val offlineTrainingPausedRemainingMs: Long = 0L,
+    val offlineTrainingPausedCycleElapsedMs: Long = 0L,
     val recoveryEndsAtMs: Long = 0L,
     val lastUpdatedMs: Long = System.currentTimeMillis(),
     @ServerTimestamp val createdAt: Timestamp? = null,
@@ -95,7 +97,7 @@ data class DigimonCreature(
             .firstOrNull { it.startsWith("ot:") }
             ?.removePrefix("ot:")
             ?.split(":")
-            ?.firstOrNull()
+            ?.getOrNull(0)
             ?.toLongOrNull()
             ?.let { it * 1000L } ?: 0L
         return maxOf(offlineTrainingEndMs, fromForms)
@@ -112,6 +114,28 @@ data class DigimonCreature(
         return maxOf(offlineTrainingLastTickMs, fromForms)
     }
 
+    fun persistedOfflineTrainingPausedRemainingMs(): Long {
+        val fromForms = unlockedForms
+            .firstOrNull { it.startsWith("ot:") }
+            ?.removePrefix("ot:")
+            ?.split(":")
+            ?.getOrNull(2)
+            ?.toLongOrNull()
+            ?.let { it * 1000L } ?: 0L
+        return maxOf(offlineTrainingPausedRemainingMs, fromForms)
+    }
+
+    fun persistedOfflineTrainingPausedCycleElapsedMs(): Long {
+        val fromForms = unlockedForms
+            .firstOrNull { it.startsWith("ot:") }
+            ?.removePrefix("ot:")
+            ?.split(":")
+            ?.getOrNull(3)
+            ?.toLongOrNull()
+            ?.let { it * 1000L } ?: 0L
+        return maxOf(offlineTrainingPausedCycleElapsedMs, fromForms)
+    }
+
     fun persistedRecoveryEndsAtMs(): Long {
         val fromForms = unlockedForms
             .firstOrNull { it.startsWith("rc:") }
@@ -121,11 +145,22 @@ data class DigimonCreature(
         return maxOf(recoveryEndsAtMs, fromForms)
     }
 
-    fun isInOfflineTraining(nowMs: Long = System.currentTimeMillis()): Boolean =
-        persistedOfflineTrainingEndMs() > nowMs
+    fun isOfflineTrainingPaused(): Boolean =
+        persistedOfflineTrainingPausedRemainingMs() > 0L && persistedOfflineTrainingEndMs() <= 0L
 
-    fun remainingOfflineTrainingSec(nowMs: Long = System.currentTimeMillis()): Long =
-        ((persistedOfflineTrainingEndMs() - nowMs) / 1000L).coerceAtLeast(0L)
+    fun isInOfflineTraining(nowMs: Long = System.currentTimeMillis()): Boolean =
+        persistedOfflineTrainingEndMs() > nowMs && !isOfflineTrainingPaused()
+
+    fun hasOfflineTrainingSession(nowMs: Long = System.currentTimeMillis()): Boolean =
+        isInOfflineTraining(nowMs) || isOfflineTrainingPaused()
+
+    fun remainingOfflineTrainingSec(nowMs: Long = System.currentTimeMillis()): Long {
+        return if (isOfflineTrainingPaused()) {
+            (persistedOfflineTrainingPausedRemainingMs() / 1000L).coerceAtLeast(0L)
+        } else {
+            ((persistedOfflineTrainingEndMs() - nowMs) / 1000L).coerceAtLeast(0L)
+        }
+    }
 
     fun formattedOfflineTrainingRemaining(nowMs: Long = System.currentTimeMillis()): String {
         val remSec = remainingOfflineTrainingSec(nowMs)
@@ -155,6 +190,8 @@ data class DigimonCreature(
         newExpeditionsCount: Int = persistedCompletedExpeditions(),
         newOfflineTrainEndMs: Long = persistedOfflineTrainingEndMs(),
         newOfflineTrainTickMs: Long = persistedOfflineTrainingLastTickMs(),
+        newOfflineTrainPausedRemMs: Long = persistedOfflineTrainingPausedRemainingMs(),
+        newOfflineTrainPausedCycleMs: Long = persistedOfflineTrainingPausedCycleElapsedMs(),
         newRecoveryEndsMs: Long = persistedRecoveryEndsAtMs(),
         targetSpeciesOverride: String = speciesId
     ): List<String> {
@@ -170,10 +207,12 @@ data class DigimonCreature(
         val metaTags = buildList {
             if (newBonusStats > 0) add("bn:$newBonusStats".take(40))
             if (newExpeditionsCount > 0) add("ex:$newExpeditionsCount".take(40))
-            if (newOfflineTrainEndMs > 0L) {
+            if (newOfflineTrainEndMs > 0L || newOfflineTrainPausedRemMs > 0L) {
                 val endSec = newOfflineTrainEndMs / 1000L
                 val tickSec = (newOfflineTrainTickMs.takeIf { it > 0L } ?: newOfflineTrainEndMs) / 1000L
-                add("ot:$endSec:$tickSec".take(40))
+                val pausedRemSec = newOfflineTrainPausedRemMs / 1000L
+                val pausedCycleSec = newOfflineTrainPausedCycleMs / 1000L
+                add("ot:$endSec:$tickSec:$pausedRemSec:$pausedCycleSec".take(40))
             }
             if (newRecoveryEndsMs > 0L) {
                 val recSec = newRecoveryEndsMs / 1000L
@@ -254,6 +293,7 @@ data class DigimonCreature(
 
     fun moodLabel(): String = when {
         isRecoveringFrom1Hp() -> "1 HP RECOVERING (${formattedRecoveryRemaining()})"
+        isOfflineTrainingPaused() -> "OFFLINE PAUSED (${formattedOfflineTrainingRemaining()})"
         isInOfflineTraining() -> "24H AUTO-TRAIN (${formattedOfflineTrainingRemaining()})"
         health < 35 -> "CRITICAL DAMAGE"
         hunger < 25 -> "NEEDS FOOD!"
@@ -590,8 +630,44 @@ data class DigimonSpeciesSpec(
     val baseWisdom: Int,
     val apexTargetName: String = "WarGreymon",
     val isRareLevel100Spec: Boolean = false,
+    val starterAbilityName: String = "",
+    val starterAbilityDescription: String = "",
     val evolutionBranches: List<EvolutionBranchRequirement> = emptyList()
-)
+) {
+    fun resolvedAbilityName(): String {
+        if (starterAbilityName.isNotBlank()) return starterAbilityName
+        return when (speciesId) {
+            "agumon" -> "Solar Overdrive"
+            "gabumon" -> "Cryo Fang Reflex"
+            "patamon" -> "Seraphic Pulse"
+            "guilmon" -> "Digital Hazard Fury"
+            "veemon" -> "Courageous Vanguard"
+            "dorumon" -> "X-Antibody Core"
+            "tentomon" -> "Dynamo Carapace"
+            "renamon" -> "Phantom Kitsune Step"
+            "terriermon" -> "Twin Gale Typhoon"
+            "gammamon" -> "Sirius Nova Gene"
+            else -> "$attribute Core Resonance"
+        }
+    }
+
+    fun resolvedAbilityDescription(): String {
+        if (starterAbilityDescription.isNotBlank()) return starterAbilityDescription
+        return when (speciesId) {
+            "agumon" -> "+15% Fire Attack Power & +2 Bonus ATK Synergy on Power Drills"
+            "gabumon" -> "+15% First-Strike Speed & +10% Wild Monster Taming Resonance"
+            "patamon" -> "+20% Celestial Wisdom Sync & +4 Bonus HP Recovery on Rest"
+            "guilmon" -> "+20% Critical Strike Damage in Wild Battles & High Base ATK (62)"
+            "veemon" -> "+15% Evolution Sync Gain & High-Velocity Vanguard Dash (58 SPD)"
+            "dorumon" -> "+15% Chrome Armor Defense (56 DEF) & Reduced Stamina Drain"
+            "tentomon" -> "Bio-Electric Shell reflects shock damage & boosts DEF/WIS Synergy"
+            "renamon" -> "Highest Rookie Speed (60 SPD) with +18% Evasion & Diamond Crit"
+            "terriermon" -> "Balanced Wind Aura granting +15% All-Around Stamina Efficiency"
+            "gammamon" -> "Tri-Horn Dragon DNA granting +15% Dual Attack & Defense Power"
+            else -> "Amplifies $signatureMove damage and $attribute attribute synchronization."
+        }
+    }
+}
 
 enum class DrillType(
     val activityName: String,
@@ -1635,11 +1711,15 @@ object DigimonCatalog {
         return when {
             id in level100RareSpeciesIds ->
                 com.example.R.drawable.img_monster_mythic_apex
+            id.contains("rena") || id.contains("terrier") || id.contains("lop") || id.contains("kyubi") || id.contains("tao") || id.contains("sala") || id.contains("gato") || id.contains("angora") ->
+                com.example.R.drawable.img_monster_cyber_kitsune
+            id.contains("tento") || id.contains("kabuteri") || id.contains("gamma") || id.contains("canoweiss") || id.contains("worm") || id.contains("sting") || id.contains("haguru") || id.contains("guardro") || id.contains("andro") || id.contains("pulse") ->
+                com.example.R.drawable.img_monster_electro_beetle
             id.contains("garuru") || id.contains("gabu") || id.contains("doru") || id.contains("wolf") || id.contains("looga") || id.contains("jelly") ->
                 com.example.R.drawable.img_monster_frost_wolf
             id.contains("ange") || id.contains("seraph") || id.contains("pata") || id.contains("gargo") || id.contains("biyo") || id.contains("hawk") || id.contains("bird") ->
                 com.example.R.drawable.img_monster_celestial_wing
-            id.contains("guil") || id.contains("growl") || id.contains("gallant") || id.contains("imp") || id.contains("myotis") || id.contains("gamma") ->
+            id.contains("guil") || id.contains("growl") || id.contains("gallant") || id.contains("imp") || id.contains("myotis") ->
                 com.example.R.drawable.img_monster_crimson_dragon
             else ->
                 com.example.R.drawable.img_monster_flame_dino
@@ -1703,6 +1783,7 @@ object DigimonCatalog {
         }
     }
 
+    // 10 Distinct Rookie Starter Choices — each with unique Base Stats (ATK/DEF/SPD/WIS), Signature Move, and Passive Ability
     val starterSpecs: List<DigimonSpeciesSpec>
         get() = listOf(
             getSpec("agumon"),
@@ -1710,12 +1791,19 @@ object DigimonCatalog {
             getSpec("patamon"),
             getSpec("guilmon"),
             getSpec("veemon"),
-            getSpec("dorumon")
+            getSpec("dorumon"),
+            getSpec("tentomon"),
+            getSpec("renamon"),
+            getSpec("terriermon"),
+            getSpec("gammamon")
         ).filter { it.stage == "Rookie" && !it.isRareLevel100Spec }
 
     val allRookieSpecs: List<DigimonSpeciesSpec>
         get() {
-            val coreIds = listOf("agumon", "gabumon", "patamon", "guilmon", "veemon", "dorumon")
+            val coreIds = listOf(
+                "agumon", "gabumon", "patamon", "guilmon", "veemon",
+                "dorumon", "tentomon", "renamon", "terriermon", "gammamon"
+            )
             val core = coreIds.mapNotNull { allSpecies[it] }.filter { it.stage == "Rookie" && !it.isRareLevel100Spec }
             val extra = allSpeciesSpecs.filter { it.stage == "Rookie" && !it.isRareLevel100Spec && it.speciesId !in coreIds }
             return (core + extra).filter { it.stage == "Rookie" && !it.isRareLevel100Spec }

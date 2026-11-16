@@ -185,6 +185,15 @@ fun CommandDeckTab(
 
             when (selectedDeckSubTab) {
                 0 -> {
+                    // New Player Friendly Quick-Start Guide (Collapsible Digivice Manual)
+                    NewTamerQuickStartGuideCard(
+                        digiCoins = uiState.digiCoins,
+                        activeCreature = active,
+                        onOpenDrillsModal = onOpenDrillsModal,
+                        onOpenWildTamingModal = onOpenWildTamingModal,
+                        onOpenEvolutionMatrix = onOpenEvolutionMatrix
+                    )
+
                     // Sub-Tab 0: Active Partner Stage + 2x2 Care & Vitals Gauges
                     ActivePartnerHoloStageCard(
                         creature = active,
@@ -680,6 +689,13 @@ private fun ActivePartnerHoloStageCard(
                             style = MaterialTheme.typography.labelLarge,
                             color = HoloCyanPrimary
                         )
+                        Text(
+                            text = "⚡ ABILITY: ${spec.resolvedAbilityName()} — ${spec.resolvedAbilityDescription()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = BioEmeraldHealth,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
 
@@ -687,6 +703,7 @@ private fun ActivePartnerHoloStageCard(
                 val nowMs = System.currentTimeMillis()
                 val isRecovering1Hp = creature.isRecoveringFrom1Hp(nowMs)
                 val isOfflineTraining = creature.isInOfflineTraining(nowMs)
+                val isOfflineTrainingPaused = creature.isOfflineTrainingPaused()
                 Surface(
                     color = CyberVoidBg.copy(alpha = 0.7f),
                     shape = RoundedCornerShape(10.dp),
@@ -695,6 +712,7 @@ private fun ActivePartnerHoloStageCard(
                         when {
                             isRecovering1Hp -> VirusCrimsonError
                             isOfflineTraining -> BioEmeraldHealth
+                            isOfflineTrainingPaused -> EvolutionGoldSecondary
                             canDigivolve -> BioEmeraldHealth.copy(alpha = 0.6f)
                             else -> EvolutionGoldSecondary.copy(alpha = 0.45f)
                         }
@@ -706,7 +724,9 @@ private fun ActivePartnerHoloStageCard(
                             isRecovering1Hp ->
                                 "⚠️ 1 HP RECOVERY LOCKOUT (${creature.formattedRecoveryRemaining(nowMs)} LEFT): ${creature.nickname} reached 1 HP in wild battle & must recover for 5 mins before doing anything!"
                             isOfflineTraining ->
-                                "⚡ 24H OFFLINE TRAINING ACTIVE (${creature.formattedOfflineTrainingRemaining(nowMs)} LEFT) • LVL ${creature.currentLevel()}/100 • Continues leveling when app is closed!"
+                                "⚡ 24H OFFLINE TRAINING ACTIVE (${creature.formattedOfflineTrainingRemaining(nowMs)} LEFT) • Normal Drills Locked • Open DRILLS tab to Pause!"
+                            isOfflineTrainingPaused ->
+                                "⏸ 24H OFFLINE TRAINING PAUSED (${creature.formattedOfflineTrainingRemaining(nowMs)} FROZEN) • Normal Drills Locked • Open DRILLS tab to Restart!"
                             creature.isOnExpedition() -> {
                                 val exp = DigimonCatalog.getExpedition(creature.activeExpeditionId)
                                 "ON EXPEDITION: ${exp?.title ?: "Active"} (${exp?.durationLabel ?: ""}) • Keep Fed & Cryo-Rested!"
@@ -725,6 +745,7 @@ private fun ActivePartnerHoloStageCard(
                         style = MaterialTheme.typography.labelMedium,
                         color = when {
                             isRecovering1Hp -> VirusCrimsonError
+                            isOfflineTrainingPaused -> EvolutionGoldSecondary
                             canDigivolve || isOfflineTraining -> BioEmeraldHealth
                             else -> EvolutionGoldSecondary
                         },
@@ -1575,4 +1596,166 @@ private fun SystemFullResetCard(
         }
     }
 }
+
+@Composable
+private fun NewTamerQuickStartGuideCard(
+    digiCoins: Int,
+    activeCreature: DigimonCreature,
+    onOpenDrillsModal: () -> Unit,
+    onOpenWildTamingModal: () -> Unit,
+    onOpenEvolutionMatrix: () -> Unit
+) {
+    var expanded by remember { mutableStateOf(activeCreature.currentLevel() <= 3) }
+    val nowMs = System.currentTimeMillis()
+    val inOfflineSession = activeCreature.hasOfflineTrainingSession(nowMs)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("new_tamer_quick_start_card"),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = HoloCardElevated),
+        border = BorderStroke(1.5.dp, HoloCyanPrimary.copy(alpha = 0.65f))
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.AutoAwesome,
+                        contentDescription = null,
+                        tint = EvolutionGoldSecondary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "DIGIVICE TAMER QUICK-START GUIDE",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = HoloCyanPrimary
+                        )
+                        Text(
+                            text = "New Game Bonus: 200 DigiCoins • 10 Starter Monsters w/ Unique Abilities",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = EvolutionGoldSecondary
+                        )
+                    }
+                }
+                Surface(
+                    color = HoloSlateSurface,
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, HoloCyanPrimary.copy(alpha = 0.5f))
+                ) {
+                    Text(
+                        text = if (expanded) "HIDE ▲" else "HOW TO PLAY ▼",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = HoloCyanPrimary,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            if (expanded) {
+                Surface(
+                    color = CyberVoidBg.copy(alpha = 0.75f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, HoloSlateSurface),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "1. 🪙 200 STARTING DIGICOINS: Every New Game starts with 200 DigiCoins (+5 Coins every 5m). Spend 10 Coins per normal Drill or 100 Coins for 24-Hour Offline Auto-Training.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "2. ⏸ PAUSABLE OFFLINE TRAINING: While in 24h Offline Training, normal drills are locked. You can PAUSE Offline Training at any time to freeze the timer and RESTART when ready!",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = BioEmeraldHealth
+                        )
+                        Text(
+                            text = "3. 🧬 DIGIVOLUTION AT LVL 20+: Train your Rookie Digital Monster to LVL 20+ and meet branch stats (ATK/DEF/SPD/WIS) to Digivolve into Champion, Ultimate, Mega & LVL-100 Mythic forms.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = EvolutionGoldSecondary
+                        )
+                        Text(
+                            text = "4. 🍖 CARE & WILD TAMING: Keep Hunger & Stamina high using the Store/Feed bag and Cryo-Rest, or visit the WORLD tab to battle & tame wild Digital Monsters ($digiCoins Coins available).",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    FilledTonalButton(
+                        onClick = onOpenDrillsModal,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = HoloCyanPrimary.copy(alpha = 0.2f),
+                            contentColor = HoloCyanPrimary
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = if (inOfflineSession) "MANAGE OFFLINE TRAIN" else "START DRILLS",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = onOpenEvolutionMatrix,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = EvolutionGoldSecondary.copy(alpha = 0.2f),
+                            contentColor = EvolutionGoldSecondary
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "EVO REQUIREMENTS",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
+                    FilledTonalButton(
+                        onClick = onOpenWildTamingModal,
+                        colors = ButtonDefaults.filledTonalButtonColors(
+                            containerColor = BioEmeraldHealth.copy(alpha = 0.2f),
+                            contentColor = BioEmeraldHealth
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "WILD RADAR",
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 

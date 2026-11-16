@@ -977,7 +977,8 @@ fun AuthenticatedHoloDashboard(
                             onCompleteDrill = { drill, score ->
                                 viewModel.completeTrainingDrill(drill, score)
                             },
-                            onStart24hOfflineTraining = viewModel::start24hOfflineTraining
+                            onStart24hOfflineTraining = viewModel::start24hOfflineTraining,
+                            onTogglePauseOfflineTraining = viewModel::togglePauseOfflineTraining
                         )
                         DigiPulseTab.STORE -> StoreHubTab(
                             activeCreature = uiState.activeCreature,

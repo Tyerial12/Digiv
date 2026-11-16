@@ -412,12 +412,11 @@ class DigiPulseViewModel(
                 val combinedSkills = (opt.allUnlockedSkillNodeIds() + (cld?.allUnlockedSkillNodeIds() ?: emptySet())).toList()
                 val combinedBonus = maxOf(opt.persistedNonTrainingBonusStats(), cld?.persistedNonTrainingBonusStats() ?: 0)
                 val combinedExpCount = maxOf(opt.persistedCompletedExpeditions(), cld?.persistedCompletedExpeditions() ?: 0)
-                val resolvedOfflineEnd = if (opt.lastUpdatedMs >= (cld?.lastUpdatedMs ?: 0L)) {
-                    opt.persistedOfflineTrainingEndMs()
-                } else {
-                    cld?.persistedOfflineTrainingEndMs() ?: opt.persistedOfflineTrainingEndMs()
-                }
-                val resolvedOfflineTick = maxOf(opt.persistedOfflineTrainingLastTickMs(), cld?.persistedOfflineTrainingLastTickMs() ?: 0L)
+                val newerForOffline = if (opt.lastUpdatedMs >= (cld?.lastUpdatedMs ?: 0L)) opt else (cld ?: opt)
+                val resolvedOfflineEnd = newerForOffline.persistedOfflineTrainingEndMs()
+                val resolvedOfflineTick = newerForOffline.persistedOfflineTrainingLastTickMs()
+                val resolvedOfflinePausedRem = newerForOffline.persistedOfflineTrainingPausedRemainingMs()
+                val resolvedOfflinePausedCycle = newerForOffline.persistedOfflineTrainingPausedCycleElapsedMs()
                 val resolvedRecoveryEnd = if (opt.lastUpdatedMs >= (cld?.lastUpdatedMs ?: 0L)) {
                     opt.persistedRecoveryEndsAtMs()
                 } else {
@@ -432,6 +431,8 @@ class DigiPulseViewModel(
                     completedExpeditionsCount = combinedExpCount,
                     offlineTrainingEndMs = resolvedOfflineEnd,
                     offlineTrainingLastTickMs = resolvedOfflineTick,
+                    offlineTrainingPausedRemainingMs = resolvedOfflinePausedRem,
+                    offlineTrainingPausedCycleElapsedMs = resolvedOfflinePausedCycle,
                     recoveryEndsAtMs = resolvedRecoveryEnd
                 )
             }
@@ -444,6 +445,8 @@ class DigiPulseViewModel(
                         completedExpeditionsCount = cld.persistedCompletedExpeditions(),
                         offlineTrainingEndMs = cld.persistedOfflineTrainingEndMs(),
                         offlineTrainingLastTickMs = cld.persistedOfflineTrainingLastTickMs(),
+                        offlineTrainingPausedRemainingMs = cld.persistedOfflineTrainingPausedRemainingMs(),
+                        offlineTrainingPausedCycleElapsedMs = cld.persistedOfflineTrainingPausedCycleElapsedMs(),
                         recoveryEndsAtMs = cld.persistedRecoveryEndsAtMs()
                     )
                 }
@@ -456,6 +459,8 @@ class DigiPulseViewModel(
                     completedExpeditionsCount = cld.persistedCompletedExpeditions(),
                     offlineTrainingEndMs = cld.persistedOfflineTrainingEndMs(),
                     offlineTrainingLastTickMs = cld.persistedOfflineTrainingLastTickMs(),
+                    offlineTrainingPausedRemainingMs = cld.persistedOfflineTrainingPausedRemainingMs(),
+                    offlineTrainingPausedCycleElapsedMs = cld.persistedOfflineTrainingPausedCycleElapsedMs(),
                     recoveryEndsAtMs = cld.persistedRecoveryEndsAtMs()
                 )
             }
@@ -1156,6 +1161,8 @@ class DigiPulseViewModel(
                         newExpeditionsCount = working.persistedCompletedExpeditions(),
                         newOfflineTrainEndMs = nextEndMs,
                         newOfflineTrainTickMs = nextTickMs,
+                        newOfflineTrainPausedRemMs = 0L,
+                        newOfflineTrainPausedCycleMs = 0L,
                         newRecoveryEndsMs = working.persistedRecoveryEndsAtMs()
                     )
                     working = working.copy(
@@ -1167,6 +1174,8 @@ class DigiPulseViewModel(
                         bondLevel = (working.bondLevel + bondGain).coerceIn(0, 100),
                         offlineTrainingEndMs = nextEndMs,
                         offlineTrainingLastTickMs = nextTickMs,
+                        offlineTrainingPausedRemainingMs = 0L,
+                        offlineTrainingPausedCycleElapsedMs = 0L,
                         unlockedForms = newForms,
                         lastUpdatedMs = nowMs
                     )
@@ -1535,9 +1544,14 @@ class DigiPulseViewModel(
         val nowMs = System.currentTimeMillis()
         if (checkBlockedBy1HpRecovery(active, nowMs)) return
 
+        if (active.isOfflineTrainingPaused()) {
+            restartOfflineTraining()
+            return
+        }
+
         if (active.isInOfflineTraining(nowMs)) {
             _statusBannerMessage.value =
-                "${active.nickname} is already in 24-Hour Offline Auto-Training (${active.formattedOfflineTrainingRemaining(nowMs)} remaining)! It will continue leveling even when the app is closed."
+                "${active.nickname} is already in 24-Hour Offline Auto-Training (${active.formattedOfflineTrainingRemaining(nowMs)} remaining)! You can pause the offline training timer anytime."
             return
         }
 
@@ -1560,6 +1574,8 @@ class DigiPulseViewModel(
             newExpeditionsCount = active.persistedCompletedExpeditions(),
             newOfflineTrainEndMs = endMs,
             newOfflineTrainTickMs = nowMs,
+            newOfflineTrainPausedRemMs = 0L,
+            newOfflineTrainPausedCycleMs = 0L,
             newRecoveryEndsMs = active.persistedRecoveryEndsAtMs()
         )
         val updated = active.copy(
@@ -1571,13 +1587,15 @@ class DigiPulseViewModel(
             bondLevel = (active.bondLevel + 3).coerceIn(0, 100),
             offlineTrainingEndMs = endMs,
             offlineTrainingLastTickMs = nowMs,
+            offlineTrainingPausedRemainingMs = 0L,
+            offlineTrainingPausedCycleElapsedMs = 0L,
             unlockedForms = newForms,
             lastUpdatedMs = nowMs
         )
 
         upsertOptimisticCreature(updated)
         val summary =
-            "Activated 24-Hour Offline Auto-Training (-$cost DigiCoins, $remainingCoins left): Continues training ${active.nickname} for 24h even when app is closed! (+1 Kickoff LVL • LVL ${updated.currentLevel()}/100)"
+            "Activated 24-Hour Offline Auto-Training (-$cost DigiCoins, $remainingCoins left): Normal training is locked while in offline training, and you can pause/restart the 24h timer anytime! (+1 Kickoff LVL • LVL ${updated.currentLevel()}/100)"
         val logEntry = prependOptimisticLog(
             TrainingLogEntry(
                 userId = currentUserId,
@@ -1599,6 +1617,123 @@ class DigiPulseViewModel(
             }
             checkAndDispatchThresholds(updated)
             syncLeaderboardWithSquad()
+        }
+    }
+
+    fun pauseOfflineTraining() {
+        val active = uiState.value.activeCreature ?: return
+        val nowMs = System.currentTimeMillis()
+        if (!active.isInOfflineTraining(nowMs)) {
+            if (active.isOfflineTrainingPaused()) {
+                _statusBannerMessage.value =
+                    "${active.nickname}'s Offline Auto-Training is already paused (${active.formattedOfflineTrainingRemaining(nowMs)} remaining). Tap RESTART OFFLINE TRAINING to resume the timer!"
+            }
+            return
+        }
+
+        val otEndMs = active.persistedOfflineTrainingEndMs()
+        val otLastTickMs = active.persistedOfflineTrainingLastTickMs().let {
+            if (it > 0L) it else (otEndMs - DigimonCatalog.OFFLINE_TRAINING_24H_DURATION_MS).coerceAtLeast(0L)
+        }
+        val effectiveNow = minOf(nowMs, otEndMs)
+        val elapsedTrainMs = (effectiveNow - otLastTickMs).coerceAtLeast(0L)
+        val completedCycles = (elapsedTrainMs / DigimonCatalog.OFFLINE_TRAINING_CYCLE_MS).toInt()
+        val cycleElapsedRemainderMs = elapsedTrainMs % DigimonCatalog.OFFLINE_TRAINING_CYCLE_MS
+        val remainingMs = (otEndMs - nowMs).coerceAtLeast(1000L)
+
+        val atkGain = completedCycles * 2
+        val defGain = completedCycles * 2
+        val spdGain = completedCycles * 2
+        val wisGain = completedCycles * 3
+        val syncGain = completedCycles * 4
+        val bondGain = completedCycles * 1
+
+        val newForms = active.withUpdatedMetadataInForms(
+            newSkillNodes = active.allUnlockedSkillNodeIds(),
+            newBonusStats = active.persistedNonTrainingBonusStats(),
+            newExpeditionsCount = active.persistedCompletedExpeditions(),
+            newOfflineTrainEndMs = 0L,
+            newOfflineTrainTickMs = 0L,
+            newOfflineTrainPausedRemMs = remainingMs,
+            newOfflineTrainPausedCycleMs = cycleElapsedRemainderMs,
+            newRecoveryEndsMs = active.persistedRecoveryEndsAtMs()
+        )
+        val updated = active.copy(
+            attack = active.attack + atkGain,
+            defense = active.defense + defGain,
+            speed = active.speed + spdGain,
+            wisdom = active.wisdom + wisGain,
+            evolutionProgress = (active.evolutionProgress + syncGain).coerceIn(0, 100),
+            bondLevel = (active.bondLevel + bondGain).coerceIn(0, 100),
+            offlineTrainingEndMs = 0L,
+            offlineTrainingLastTickMs = 0L,
+            offlineTrainingPausedRemainingMs = remainingMs,
+            offlineTrainingPausedCycleElapsedMs = cycleElapsedRemainderMs,
+            unlockedForms = newForms,
+            lastUpdatedMs = nowMs
+        )
+
+        upsertOptimisticCreature(updated)
+        _statusBannerMessage.value =
+            "⏸ Offline Auto-Training PAUSED for ${active.nickname}! Timer is frozen at ${updated.formattedOfflineTrainingRemaining(nowMs)} remaining until you restart offline training."
+
+        viewModelScope.launch {
+            if (isGoogleSignedIn) {
+                repository.updateCreature(updated)
+            }
+        }
+    }
+
+    fun restartOfflineTraining() {
+        val active = uiState.value.activeCreature ?: return
+        val nowMs = System.currentTimeMillis()
+        if (checkBlockedBy1HpRecovery(active, nowMs)) return
+        if (!active.isOfflineTrainingPaused()) {
+            return
+        }
+
+        val pausedRemMs = active.persistedOfflineTrainingPausedRemainingMs().coerceAtLeast(1000L)
+        val pausedCycleMs = active.persistedOfflineTrainingPausedCycleElapsedMs().coerceAtLeast(0L)
+        val newEndMs = nowMs + pausedRemMs
+        val newLastTickMs = (nowMs - pausedCycleMs).coerceAtLeast(0L)
+
+        val newForms = active.withUpdatedMetadataInForms(
+            newSkillNodes = active.allUnlockedSkillNodeIds(),
+            newBonusStats = active.persistedNonTrainingBonusStats(),
+            newExpeditionsCount = active.persistedCompletedExpeditions(),
+            newOfflineTrainEndMs = newEndMs,
+            newOfflineTrainTickMs = newLastTickMs,
+            newOfflineTrainPausedRemMs = 0L,
+            newOfflineTrainPausedCycleMs = 0L,
+            newRecoveryEndsMs = active.persistedRecoveryEndsAtMs()
+        )
+        val updated = active.copy(
+            offlineTrainingEndMs = newEndMs,
+            offlineTrainingLastTickMs = newLastTickMs,
+            offlineTrainingPausedRemainingMs = 0L,
+            offlineTrainingPausedCycleElapsedMs = 0L,
+            unlockedForms = newForms,
+            lastUpdatedMs = nowMs
+        )
+
+        upsertOptimisticCreature(updated)
+        _statusBannerMessage.value =
+            "▶ Offline Auto-Training RESTARTED for ${active.nickname}! Countdown timer resumed from ${updated.formattedOfflineTrainingRemaining(nowMs)} remaining."
+
+        viewModelScope.launch {
+            if (isGoogleSignedIn) {
+                repository.updateCreature(updated)
+            }
+        }
+    }
+
+    fun togglePauseOfflineTraining() {
+        val active = uiState.value.activeCreature ?: return
+        val nowMs = System.currentTimeMillis()
+        when {
+            active.isInOfflineTraining(nowMs) -> pauseOfflineTraining()
+            active.isOfflineTrainingPaused() -> restartOfflineTraining()
+            else -> start24hOfflineTraining()
         }
     }
 
@@ -1824,7 +1959,18 @@ class DigiPulseViewModel(
 
     fun completeTrainingDrill(drillType: DrillType, scorePercent: Int) {
         val active = uiState.value.activeCreature ?: return
-        if (checkBlockedBy1HpRecovery(active)) return
+        val nowMs = System.currentTimeMillis()
+        if (checkBlockedBy1HpRecovery(active, nowMs)) return
+        if (active.hasOfflineTrainingSession(nowMs)) {
+            val statusDetail = if (active.isOfflineTrainingPaused()) {
+                "PAUSED (${active.formattedOfflineTrainingRemaining(nowMs)} remaining)"
+            } else {
+                "ACTIVE (${active.formattedOfflineTrainingRemaining(nowMs)} remaining)"
+            }
+            _statusBannerMessage.value =
+                "Once in Offline Auto-Training ($statusDetail), ${active.nickname} cannot train normally!"
+            return
+        }
         val currentCoins = _digiCoins.value
         if (currentCoins < DigimonCatalog.TRAINING_DRILL_COIN_COST) {
             val mins = _nextDigiCoinTickSec.value / 60

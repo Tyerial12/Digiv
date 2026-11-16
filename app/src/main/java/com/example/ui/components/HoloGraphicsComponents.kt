@@ -220,16 +220,35 @@ fun DigimonHoloCrestAvatar(
         modifier = modifier.size(sizeDp),
         contentAlignment = Alignment.Center
     ) {
+        // High-detail Active Digital Monster Image inside the holographic Digivice frame
+        Image(
+            painter = painterResource(id = imageRes),
+            contentDescription = "${spec.speciesName} Digital Monster Portrait",
+            contentScale = ContentScale.Crop,
+            modifier = Modifier
+                .size(sizeDp * 0.76f)
+                .scale(pulseScale)
+                .clip(RoundedCornerShape(22))
+                .border(
+                    BorderStroke(
+                        width = 2.dp,
+                        brush = Brush.linearGradient(listOf(primaryColor, secondaryColor))
+                    ),
+                    shape = RoundedCornerShape(22)
+                )
+        )
+
+        // Foreground Digivice HUD, Cyber-Scanlines, Corner V-Pet Brackets & Digital Crest Aura
         Canvas(modifier = Modifier.fillMaxSize()) {
             val center = Offset(size.width / 2f, size.height / 2f)
             val maxR = size.minDimension / 2f
 
-            // Outer radial aura
+            // Outer radial digital aura
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(
-                        primaryColor.copy(alpha = 0.42f),
-                        secondaryColor.copy(alpha = 0.18f),
+                        primaryColor.copy(alpha = 0.28f),
+                        secondaryColor.copy(alpha = 0.12f),
                         Color.Transparent
                     ),
                     center = center,
@@ -238,18 +257,59 @@ fun DigimonHoloCrestAvatar(
                 radius = maxR
             )
 
-            // Rotating cyber-digivice telemetry ring
+            // Subtle Digivice LCD horizontal scanlines across the portrait
+            val boxSpan = maxR * 1.38f
+            val leftX = center.x - boxSpan / 2f
+            val rightX = center.x + boxSpan / 2f
+            for (lineIdx in -3..3) {
+                val y = center.y + lineIdx * (boxSpan / 8f)
+                drawLine(
+                    color = HoloCyanPrimary.copy(alpha = 0.14f),
+                    start = Offset(leftX, y),
+                    end = Offset(rightX, y),
+                    strokeWidth = 1.dp.toPx()
+                )
+            }
+
+            // V-Pet Corner Targeting Brackets [ ]
+            val bracketInset = maxR * 0.14f
+            val bracketLen = maxR * 0.26f
+            val strokeW = 2.2.dp.toPx()
+            val bColor = if (evolutionReady) EvolutionGoldSecondary else primaryColor
+            // Top-Left
+            drawLine(bColor, Offset(bracketInset, bracketInset), Offset(bracketInset + bracketLen, bracketInset), strokeW, StrokeCap.Round)
+            drawLine(bColor, Offset(bracketInset, bracketInset), Offset(bracketInset, bracketInset + bracketLen), strokeW, StrokeCap.Round)
+            // Top-Right
+            drawLine(bColor, Offset(size.width - bracketInset, bracketInset), Offset(size.width - bracketInset - bracketLen, bracketInset), strokeW, StrokeCap.Round)
+            drawLine(bColor, Offset(size.width - bracketInset, bracketInset), Offset(size.width - bracketInset, bracketInset + bracketLen), strokeW, StrokeCap.Round)
+            // Bottom-Left
+            drawLine(bColor, Offset(bracketInset, size.height - bracketInset), Offset(bracketInset + bracketLen, size.height - bracketInset), strokeW, StrokeCap.Round)
+            drawLine(bColor, Offset(bracketInset, size.height - bracketInset), Offset(bracketInset, size.height - bracketInset - bracketLen), strokeW, StrokeCap.Round)
+            // Bottom-Right
+            drawLine(bColor, Offset(size.width - bracketInset, size.height - bracketInset), Offset(size.width - bracketInset - bracketLen, size.height - bracketInset), strokeW, StrokeCap.Round)
+            drawLine(bColor, Offset(size.width - bracketInset, size.height - bracketInset), Offset(size.width - bracketInset, size.height - bracketInset - bracketLen), strokeW, StrokeCap.Round)
+
+            // Rotating cyber-digivice telemetry ring & binary data nodes
             rotate(degrees = ringRotation, pivot = center) {
                 val ringRadius = maxR * 0.92f
                 for (i in 0 until 6) {
                     drawArc(
                         color = if (i % 2 == 0) primaryColor else secondaryColor,
                         startAngle = i * 60f,
-                        sweepAngle = 38f,
+                        sweepAngle = 34f,
                         useCenter = false,
                         topLeft = Offset(center.x - ringRadius, center.y - ringRadius),
                         size = Size(ringRadius * 2, ringRadius * 2),
-                        style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round)
+                        style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round)
+                    )
+                    val dotAngle = Math.toRadians((i * 60.0) + 47.0)
+                    drawCircle(
+                        color = EvolutionGoldSecondary,
+                        radius = 2.4.dp.toPx(),
+                        center = Offset(
+                            center.x + (ringRadius * cos(dotAngle)).toFloat(),
+                            center.y + (ringRadius * sin(dotAngle)).toFloat()
+                        )
                     )
                 }
             }
@@ -262,7 +322,7 @@ fun DigimonHoloCrestAvatar(
                 else -> 12
             }
             val polyPath = Path()
-            val polyR = maxR * 0.82f * pulseScale
+            val polyR = maxR * 0.84f * pulseScale
             for (i in 0 until sides) {
                 val angleRad = Math.toRadians((i * (360.0 / sides)) - 90.0)
                 val x = center.x + (polyR * cos(angleRad)).toFloat()
@@ -274,27 +334,9 @@ fun DigimonHoloCrestAvatar(
             drawPath(
                 path = polyPath,
                 color = primaryColor.copy(alpha = 0.65f),
-                style = Stroke(width = 2.dp.toPx())
+                style = Stroke(width = 1.8.dp.toPx())
             )
         }
-
-        // High-detail Active Monster Image inside the holographic telemetry frame
-        Image(
-            painter = painterResource(id = imageRes),
-            contentDescription = "${spec.speciesName} Portrait",
-            contentScale = ContentScale.Crop,
-            modifier = Modifier
-                .size(sizeDp * 0.74f)
-                .scale(pulseScale)
-                .clip(CircleShape)
-                .border(
-                    BorderStroke(
-                        width = 2.dp,
-                        brush = Brush.linearGradient(listOf(primaryColor, secondaryColor))
-                    ),
-                    shape = CircleShape
-                )
-        )
     }
 }
 

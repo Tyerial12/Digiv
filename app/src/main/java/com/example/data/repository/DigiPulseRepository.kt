@@ -1357,6 +1357,8 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                         completedExpeditionsCount = obj.optInt("completedExpeditionsCount", 0),
                         offlineTrainingEndMs = obj.optLong("offlineTrainingEndMs", 0L),
                         offlineTrainingLastTickMs = obj.optLong("offlineTrainingLastTickMs", 0L),
+                        offlineTrainingPausedRemainingMs = obj.optLong("offlineTrainingPausedRemainingMs", 0L),
+                        offlineTrainingPausedCycleElapsedMs = obj.optLong("offlineTrainingPausedCycleElapsedMs", 0L),
                         recoveryEndsAtMs = obj.optLong("recoveryEndsAtMs", 0L),
                         lastUpdatedMs = obj.optLong("lastUpdatedMs", System.currentTimeMillis())
                     )
@@ -1398,6 +1400,8 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
             obj.put("completedExpeditionsCount", c.persistedCompletedExpeditions())
             obj.put("offlineTrainingEndMs", c.persistedOfflineTrainingEndMs())
             obj.put("offlineTrainingLastTickMs", c.persistedOfflineTrainingLastTickMs())
+            obj.put("offlineTrainingPausedRemainingMs", c.persistedOfflineTrainingPausedRemainingMs())
+            obj.put("offlineTrainingPausedCycleElapsedMs", c.persistedOfflineTrainingPausedCycleElapsedMs())
             obj.put("recoveryEndsAtMs", c.persistedRecoveryEndsAtMs())
             obj.put("lastUpdatedMs", c.lastUpdatedMs)
             arr.put(obj)
