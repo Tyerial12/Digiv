@@ -104,7 +104,7 @@ fun StoreHubTab(
                 modifier = Modifier.size(26.dp)
             )
             Text(
-                text = "DIGI-STORE // FOOD, BERRIES & PARTS",
+                text = "SUNSPIRE GRAND BAZAAR // NECTAR, ORBS & RELICS",
                 style = MaterialTheme.typography.headlineLarge,
                 color = EvolutionGoldSecondary
             )
@@ -134,7 +134,7 @@ fun StoreHubTab(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "DAILY LOGIN REWARD // DAY $dailyLoginStreakDays/7 STREAK",
+                        text = "STARLIGHT DAILY REWARD // DAY $dailyLoginStreakDays/7 STREAK",
                         style = MaterialTheme.typography.titleMedium,
                         color = if (dailyLoginClaimedToday) BioEmeraldHealth else EvolutionGoldSecondary,
                         modifier = Modifier.weight(1f)
@@ -155,9 +155,9 @@ fun StoreHubTab(
 
                 Text(
                     text = if (dailyLoginClaimedToday && !lastDailyLoginRewardText.isNullOrBlank()) {
-                        "✓ $lastDailyLoginRewardText • Log in again tomorrow to continue your 7-day retention streak!"
+                        "✓ $lastDailyLoginRewardText • Tune in again tomorrow to continue your 7-day Starlight Lucky Number streak!"
                     } else {
-                        "Claim your daily login bonus once per day for a small amount of DigiCoins (10–25 Coins) or a random Berry (1–2x Tamming Berries)!"
+                        "Claim your Starlight daily bonus once per day for Crest Coins (10–25 Coins) or Master Orin's Acorn Orbs (1–2x Orbs)!"
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White
@@ -178,9 +178,9 @@ fun StoreHubTab(
                 ) {
                     Text(
                         text = if (dailyLoginClaimedToday) {
-                            "✓ TODAY'S DAILY LOGIN REWARD CLAIMED"
+                            "✓ TODAY'S STARLIGHT REWARD CLAIMED"
                         } else {
-                            "CLAIM DAILY LOGIN REWARD (DIGICOINS OR BERRY)"
+                            "CLAIM DAILY REWARD (CREST COINS OR ACORN ORB)"
                         },
                         style = MaterialTheme.typography.labelLarge
                     )
@@ -209,7 +209,7 @@ fun StoreHubTab(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "BALANCE: $digiCoins DIGICOINS",
+                        text = "BALANCE: $digiCoins CREST COINS",
                         style = MaterialTheme.typography.headlineMedium,
                         color = EvolutionGoldSecondary
                     )
@@ -249,7 +249,7 @@ fun StoreHubTab(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "TAMMING BERRIES IN BAG: $tammingBerryCount",
+                                text = "ACORN ORBS IN BAG: $tammingBerryCount",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = BioEmeraldHealth
                             )
@@ -273,7 +273,7 @@ fun StoreHubTab(
                             )
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "FOOD RATIONS IN BAG: $totalFoodOwned",
+                                text = "NECTAR & DELICACIES: $totalFoodOwned",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = SolarCoralHunger
                             )
@@ -290,7 +290,7 @@ fun StoreHubTab(
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                         ) {
                             Text(
-                                text = "MONSTER PARTS: $totalPartsCount ($totalPartsCoinValue COINS)",
+                                text = "ACORNS & SHARDS: $totalPartsCount ($totalPartsCoinValue COINS)",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = EvolutionGoldSecondary
                             )
@@ -299,14 +299,14 @@ fun StoreHubTab(
                 }
 
                 Text(
-                    text = "Store Rule: Buy or claim Food Rations here before feeding your pet, buy Tamming Berries (2 DigiCoins each) to capture wild monsters, or sell Monster Parts earned from battling wild monsters!",
+                    text = "Bazaar Rule: Claim or buy Nectar & Delicacies here before feeding your companion, buy Master Orin's Acorn Orbs (2 Crest Coins each) to capture wild companions, or sell Gilded Acorns & Relic Shards earned in wild battles!",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White
                 )
             }
         }
 
-        // SECTION 0: MONSTER PARTS SALVAGE EXCHANGE (2 DIGICOINS STANDARD / 5 DIGICOINS ULTRA RARE)
+        // SECTION 0: GILDED ACORNS & RELIC SHARDS SALVAGE EXCHANGE (2 COINS STANDARD / 5 COINS ULTRA RARE)
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -328,12 +328,12 @@ fun StoreHubTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "MONSTER PARTS SALVAGE EXCHANGE",
+                            text = "GILDED ACORNS & RELIC SHARDS EXCHANGE",
                             style = MaterialTheme.typography.titleMedium,
                             color = EvolutionGoldSecondary
                         )
                         Text(
-                            text = "Sell parts dropped from battling wild monsters you don't want to tame: Standard Parts = ${DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS} DigiCoins each • Ultra Rare Wild Parts = ${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} DigiCoins each!",
+                            text = "Sell trophies dropped from battling wild companions you don't want to capture: Gilded Acorns = ${DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS} Crest Coins each • Relic Shards = ${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} Crest Coins each!",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -344,7 +344,7 @@ fun StoreHubTab(
                         border = BorderStroke(1.dp, EvolutionGoldSecondary)
                     ) {
                         Text(
-                            text = "$totalPartsCount PARTS ($totalPartsCoinValue COINS)",
+                            text = "$totalPartsCount ITEMS ($totalPartsCoinValue COINS)",
                             style = MaterialTheme.typography.labelLarge,
                             color = EvolutionGoldSecondary,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
@@ -441,12 +441,12 @@ fun StoreHubTab(
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "TAMMING BERRIES (WILD CAPTURE)",
+                            text = "MASTER ORIN'S ACORN ORBS (WILD CAPTURE)",
                             style = MaterialTheme.typography.titleMedium,
                             color = BioEmeraldHealth
                         )
                         Text(
-                            text = "Costs ${DigimonCatalog.TAMMING_BERRY_COIN_COST} DigiCoins per berry • Random success roll to tame 100 wild monsters",
+                            text = "Costs ${DigimonCatalog.TAMMING_BERRY_COIN_COST} Crest Coins per Orb • Hand-crafted in Pinehollow to capture 100 wild companions",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -485,7 +485,7 @@ fun StoreHubTab(
                     ) {
                         Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("BUY 1x (2 COINS)", style = MaterialTheme.typography.labelLarge)
+                        Text("BUY 1x ORB (2 COINS)", style = MaterialTheme.typography.labelLarge)
                     }
 
                     FilledTonalButton(
@@ -504,7 +504,7 @@ fun StoreHubTab(
                     ) {
                         Icon(Icons.Default.AddShoppingCart, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("BUY 5x (10 COINS)", style = MaterialTheme.typography.labelLarge)
+                        Text("BUY 5x ORBS (10 COINS)", style = MaterialTheme.typography.labelLarge)
                     }
                 }
 
@@ -520,7 +520,7 @@ fun StoreHubTab(
                     Icon(Icons.Default.Radar, contentDescription = null, tint = HoloCyanPrimary, modifier = Modifier.size(16.dp))
                     Spacer(modifier = Modifier.width(6.dp))
                     Text(
-                        text = "USE BERRIES IN WILD TAMING ($tammingBerryCount IN BAG)",
+                        text = "USE ACORN ORBS IN EMERALD SAFARI ($tammingBerryCount IN BAG)",
                         style = MaterialTheme.typography.labelLarge,
                         color = HoloCyanPrimary
                     )
@@ -528,15 +528,15 @@ fun StoreHubTab(
             }
         }
 
-        // SECTION 2: PET FOOD & STAT RATIONS SHOP
+        // SECTION 2: AURELIA NECTAR & STAT DELICACIES SHOP
         Text(
-            text = "PET FOOD SHOP // BUY TO FEED ${activeCreature?.nickname?.uppercase() ?: "PARTNER"}",
+            text = "AURELIA NECTAR & DELICACIES // FEED ${activeCreature?.nickname?.uppercase() ?: "COMPANION"}",
             style = MaterialTheme.typography.headlineMedium,
             color = SolarCoralHunger
         )
         if (activeCreature != null) {
             Text(
-                text = "Active Pet: ${activeCreature.nickname} • Satiety: ${activeCreature.hunger}% • HP: ${activeCreature.health}% • STA: ${activeCreature.stamina}% (Buy food below to add to your bag, then tap Feed!)",
+                text = "Active Companion: ${activeCreature.nickname} • Satiety: ${activeCreature.hunger}% • HP: ${activeCreature.health}% • STA: ${activeCreature.stamina}% (Buy delicacies below to add to your pouch, then tap Feed!)",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

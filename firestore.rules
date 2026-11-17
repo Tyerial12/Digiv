@@ -46,6 +46,50 @@ service cloud.firestore {
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
 
+    function isValidAcornOrbInventory(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.orbTypeId is string && data.orbTypeId in [
+               'standard_acorn_orb', 'crimson_fast_orb', 'cobalt_lure_orb',
+               'aureate_heavy_orb', 'verdant_friend_orb', 'lunar_moon_orb'
+             ] &&
+             data.orbDisplayName is string && data.orbDisplayName.size() >= 1 && data.orbDisplayName.size() <= 50 &&
+             data.quantity is int && data.quantity >= 0 && data.quantity <= 9999 &&
+             data.captureBonusPercent is int && data.captureBonusPercent >= 0 && data.captureBonusPercent <= 50 &&
+             data.gildedAcornCount is int && data.gildedAcornCount >= 0 && data.gildedAcornCount <= 9999 &&
+             data.relicShardCount is int && data.relicShardCount >= 0 && data.relicShardCount <= 9999 &&
+             data.lastSyncedMs is int && data.lastSyncedMs >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
+    function isValidEmeraldReserveEntry(data) {
+      return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
+             data.speciesId is string && data.speciesId.size() >= 1 && data.speciesId.size() <= 40 &&
+             data.speciesName is string && data.speciesName.size() >= 1 && data.speciesName.size() <= 50 &&
+             data.nickname is string && data.nickname.size() >= 1 && data.nickname.size() <= 40 &&
+             data.stage is string && data.stage in ['Rookie', 'Champion', 'Ultimate', 'Mega'] &&
+             data.elementAttribute is string && data.elementAttribute.size() >= 1 && data.elementAttribute.size() <= 40 &&
+             data.rarityTier is string && data.rarityTier in ['COMMON', 'UNCOMMON', 'RARE', 'ULTRA_RARE', 'LEGENDARY_APEX'] &&
+             data.capturedLevel is int && data.capturedLevel >= 1 && data.capturedLevel <= 100 &&
+             data.attack is int && data.attack >= 1 && data.attack <= 9999 &&
+             data.defense is int && data.defense >= 1 && data.defense <= 9999 &&
+             data.speed is int && data.speed >= 1 && data.speed <= 9999 &&
+             data.wisdom is int && data.wisdom >= 1 && data.wisdom <= 9999 &&
+             data.bondLevel is int && data.bondLevel >= 0 && data.bondLevel <= 100 &&
+             data.natureCode is string && data.natureCode.size() >= 1 && data.natureCode.size() <= 20 &&
+             data.heldRelicCode is string && data.heldRelicCode.size() >= 1 && data.heldRelicCode.size() <= 20 &&
+             data.chromaticShiny is bool &&
+             data.orbUsedId is string && data.orbUsedId in [
+               'standard_acorn_orb', 'crimson_fast_orb', 'cobalt_lure_orb',
+               'aureate_heavy_orb', 'verdant_friend_orb', 'lunar_moon_orb'
+             ] &&
+             data.biomeZone is string && data.biomeZone.size() >= 1 && data.biomeZone.size() <= 60 &&
+             data.inActiveParty is bool &&
+             data.capturedAtMs is int && data.capturedAtMs >= 0 &&
+             data.createdAt is timestamp && data.createdAt <= request.time &&
+             data.updatedAt is timestamp && data.updatedAt <= request.time;
+    }
+
     function isValidTrainingLogEntry(data) {
       return data.userId is string && data.userId == request.auth.uid && data.userId.size() >= 1 && data.userId.size() <= 128 &&
              data.creatureId is string && data.creatureId.size() >= 1 && data.creatureId.size() <= 128 &&
@@ -120,7 +164,7 @@ service cloud.firestore {
              data.tradedInSpeed is int && data.tradedInSpeed >= 0 && data.tradedInSpeed <= 9999 &&
              data.tradedInWisdom is int && data.tradedInWisdom >= 0 && data.tradedInWisdom <= 9999 &&
              data.tradedInBondLevel is int && data.tradedInBondLevel >= 0 && data.tradedInBondLevel <= 100 &&
-              data.claimedByCreator is bool &&
+             data.claimedByCreator is bool &&
              data.createdAt is timestamp && data.createdAt <= request.time &&
              data.updatedAt is timestamp && data.updatedAt <= request.time;
     }
@@ -186,6 +230,87 @@ service cloud.firestore {
                        ]);
 
       allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(creatureId);
+    }
+
+    // 4b. User-Scoped Acorn Orbs Inventory (Offline-Cached Wild Capture Orbs & Foraged Relics)
+    match /users/{userId}/acornOrbs/{orbTypeId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(orbTypeId);
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(orbTypeId) &&
+                       incoming().orbTypeId == orbTypeId &&
+                       incoming().keys().hasAll([
+                         'userId', 'orbTypeId', 'orbDisplayName', 'quantity',
+                         'captureBonusPercent', 'gildedAcornCount', 'relicShardCount',
+                         'lastSyncedMs', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'orbTypeId', 'orbDisplayName', 'quantity',
+                         'captureBonusPercent', 'gildedAcornCount', 'relicShardCount',
+                         'lastSyncedMs', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidAcornOrbInventory(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidAcornOrbInventory(incoming()) &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(orbTypeId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().orbTypeId == existing().orbTypeId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'orbDisplayName', 'quantity', 'captureBonusPercent',
+                         'gildedAcornCount', 'relicShardCount', 'lastSyncedMs', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(orbTypeId);
+    }
+
+    // 4c. User-Scoped Emerald Reserve Collection Inventory (Offline-Cached Wild Captures & Sanctuary Vault)
+    match /users/{userId}/emeraldReserve/{entryId} {
+      allow get: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(entryId);
+      allow list: if isSignedIn() && request.auth.uid == userId;
+
+      allow create: if isSignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(entryId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'speciesId', 'speciesName', 'nickname', 'stage',
+                         'elementAttribute', 'rarityTier', 'capturedLevel', 'attack',
+                         'defense', 'speed', 'wisdom', 'bondLevel', 'natureCode',
+                         'heldRelicCode', 'chromaticShiny', 'orbUsedId', 'biomeZone',
+                         'inActiveParty', 'capturedAtMs', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'speciesId', 'speciesName', 'nickname', 'stage',
+                         'elementAttribute', 'rarityTier', 'capturedLevel', 'attack',
+                         'defense', 'speed', 'wisdom', 'bondLevel', 'natureCode',
+                         'heldRelicCode', 'chromaticShiny', 'orbUsedId', 'biomeZone',
+                         'inActiveParty', 'capturedAtMs', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidEmeraldReserveEntry(incoming());
+
+      allow update: if isSignedIn() &&
+                       isValidEmeraldReserveEntry(incoming()) &&
+                       request.auth.uid == userId &&
+                       isValidId(userId) &&
+                       isValidId(entryId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().speciesId == existing().speciesId &&
+                       incoming().capturedAtMs == existing().capturedAtMs &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'nickname', 'stage', 'elementAttribute', 'capturedLevel',
+                         'attack', 'defense', 'speed', 'wisdom', 'bondLevel',
+                         'natureCode', 'heldRelicCode', 'inActiveParty', 'updatedAt'
+                       ]);
+
+      allow delete: if isSignedIn() && request.auth.uid == userId && isValidId(userId) && isValidId(entryId);
     }
 
     match /users/{userId}/trainingLogs/{logId} {

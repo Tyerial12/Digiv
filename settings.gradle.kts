@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Digi Verse"
+rootProject.name = "Sunheart Crest"
 
 include(":app")

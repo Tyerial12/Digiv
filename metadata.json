@@ -1,6 +1,6 @@
 {
-  "name": "Digi Verse",
-  "description": "Cyber-holo virtual pet training dashboard with a 4-widget real-time telemetry grid, interactive training drills, branching evolutions, daily logs, and social leaderboards.",
+  "name": "Sunheart Crest",
+  "description": "Sunheart Gold & SoulCrest Silver dual-realm companion RPG with a Walking Partner stage, ChronoGear radio deck, StrideWalker 24h offline stroll, Aetherlon courses, Acorn Orb wild catching, 16-Crest expeditions, and live SkyLink player trading.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

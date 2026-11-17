@@ -36,7 +36,6 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.RestartAlt
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.SwapHoriz
-import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
@@ -101,8 +100,6 @@ import com.example.ui.theme.HoloCardElevated
 import com.example.ui.theme.HoloCyanPrimary
 import com.example.ui.theme.HoloSlateSurface
 import com.example.ui.theme.VirusCrimsonError
-import com.example.util.AppUpdateChecker
-import com.example.util.GameUpdateCheckResult
 import com.example.util.PetNotificationHelper
 import com.example.viewmodel.DigiPulseViewModel
 import com.google.firebase.Firebase
@@ -139,58 +136,12 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun DigiPulseRootApp() {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val sessionPrefs = remember(context) {
         context.applicationContext.getSharedPreferences("digiverse_player_state", android.content.Context.MODE_PRIVATE)
     }
     var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
     var isLocalGuestMode by remember {
         mutableStateOf(sessionPrefs.getBoolean("is_local_guest_mode", false))
-    }
-    var updateCheckResult by remember { mutableStateOf<GameUpdateCheckResult?>(null) }
-    var showUpdateDialog by remember { mutableStateOf(false) }
-    var isCheckingForUpdate by remember { mutableStateOf(false) }
-
-    val triggerUpdateCheck: (Boolean) -> Unit = { openDialogEvenIfUpToDate ->
-        if (!isCheckingForUpdate) {
-            isCheckingForUpdate = true
-            scope.launch {
-                val lastAlertedVersion = sessionPrefs.getString("last_update_alert_version", "").orEmpty()
-                val isFirstLaunchOfThisVersion = lastAlertedVersion != BuildConfig.VERSION_NAME
-                val result = AppUpdateChecker.checkForUpdateOnLaunch(
-                    isFirstLaunchOfThisVersion = isFirstLaunchOfThisVersion
-                )
-                updateCheckResult = result
-                isCheckingForUpdate = false
-                if (result.isUpdateAvailable) {
-                    showUpdateDialog = true
-                    PetNotificationHelper.dispatchSystemAlert(
-                        context = context,
-                        notificationId = 9901,
-                        title = "Digi Verse Update Available (v${result.latestVersionName})!",
-                        message = "A newer version (v${result.latestVersionName}) is available! Tap to download the latest APK."
-                    )
-                } else if (result.isNewVersionFirstLaunch) {
-                    showUpdateDialog = true
-                    sessionPrefs.edit()
-                        .putString("last_update_alert_version", BuildConfig.VERSION_NAME)
-                        .apply()
-                    PetNotificationHelper.dispatchSystemAlert(
-                        context = context,
-                        notificationId = 9901,
-                        title = "Digi Verse v${result.installedVersionName} Launch Update Ready!",
-                        message = "Welcome to Digi Verse v${result.installedVersionName}! Launch Update Checker is active."
-                    )
-                } else if (openDialogEvenIfUpToDate) {
-                    showUpdateDialog = true
-                }
-            }
-        }
-    }
-
-    // Automatically check if there is a game update available when launching the game
-    LaunchedEffect(Unit) {
-        triggerUpdateCheck(false)
     }
 
     DisposableEffect(Unit) {
@@ -231,174 +182,12 @@ fun DigiPulseRootApp() {
                 currentUserId = uid,
                 initialTrainerName = displayName,
                 isGoogleSignedIn = isGoogleSignedIn,
-                updateCheckResult = updateCheckResult,
-                onCheckForUpdateClick = {
-                    if (updateCheckResult?.isUpdateAvailable == true) {
-                        showUpdateDialog = true
-                    } else {
-                        triggerUpdateCheck(true)
-                    }
-                },
                 onRequestGoogleSignIn = {
                     isLocalGuestMode = false
                     sessionPrefs.edit().putBoolean("is_local_guest_mode", false).apply()
                 }
             )
         }
-    }
-
-    val activeUpdateInfo = updateCheckResult
-    if (showUpdateDialog && activeUpdateInfo != null) {
-        AlertDialog(
-            onDismissRequest = {
-                showUpdateDialog = false
-                sessionPrefs.edit()
-                    .putString("last_update_alert_version", BuildConfig.VERSION_NAME)
-                    .apply()
-            },
-            containerColor = HoloCardElevated,
-            modifier = Modifier.testTag("game_update_available_dialog"),
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.SystemUpdateAlt,
-                    contentDescription = "Game Update Check",
-                    tint = if (activeUpdateInfo.isUpdateAvailable || activeUpdateInfo.isNewVersionFirstLaunch) {
-                        EvolutionGoldSecondary
-                    } else {
-                        HoloCyanPrimary
-                    },
-                    modifier = Modifier.size(42.dp)
-                )
-            },
-            title = {
-                Text(
-                    text = when {
-                        activeUpdateInfo.isUpdateAvailable ->
-                            "UPDATE AVAILABLE: v${activeUpdateInfo.latestVersionName}!"
-                        activeUpdateInfo.isNewVersionFirstLaunch ->
-                            "GAME UPDATE ALERT (v${activeUpdateInfo.installedVersionName})"
-                        else ->
-                            "GAME UP TO DATE (v${activeUpdateInfo.installedVersionName})"
-                    },
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = if (activeUpdateInfo.isUpdateAvailable || activeUpdateInfo.isNewVersionFirstLaunch) {
-                        EvolutionGoldSecondary
-                    } else {
-                        HoloCyanPrimary
-                    }
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = when {
-                            activeUpdateInfo.isUpdateAvailable ->
-                                "A newer version of Digi Verse is available! Update now to get the latest features, balance updates, and fixes."
-                            activeUpdateInfo.isNewVersionFirstLaunch ->
-                                "Launch Update Alert Active! You are running Digi Verse v${activeUpdateInfo.installedVersionName}. Whenever a newer update is published on GitHub, you will be alerted automatically on game launch."
-                            else ->
-                                "You are running Digi Verse v${activeUpdateInfo.installedVersionName}. Launch update checks run automatically every time you start the game."
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White
-                    )
-                    Surface(
-                        color = HoloSlateSurface,
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(
-                            1.dp,
-                            if (activeUpdateInfo.isUpdateAvailable || activeUpdateInfo.isNewVersionFirstLaunch) {
-                                EvolutionGoldSecondary
-                            } else {
-                                HoloCyanPrimary.copy(alpha = 0.5f)
-                            }
-                        )
-                    ) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(10.dp),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            Text(
-                                text = "Installed Version: v${activeUpdateInfo.installedVersionName} • Latest Version: v${activeUpdateInfo.latestVersionName}",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = if (activeUpdateInfo.isUpdateAvailable) {
-                                    EvolutionGoldSecondary
-                                } else {
-                                    com.example.ui.theme.BioEmeraldHealth
-                                }
-                            )
-                            Text(
-                                text = activeUpdateInfo.releaseNotes.take(280),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    if (!activeUpdateInfo.isUpdateAvailable) {
-                        OutlinedButton(
-                            onClick = {
-                                val nextMajor = (BuildConfig.VERSION_CODE + 1).toString() + ".0"
-                                updateCheckResult = activeUpdateInfo.copy(
-                                    latestVersionName = nextMajor,
-                                    isUpdateAvailable = true,
-                                    releaseNotes = "Simulated Update Alert (v$nextMajor): Tap DOWNLOAD UPDATE APK to open the GitHub Releases page and install the newest build."
-                                )
-                            },
-                            border = BorderStroke(1.dp, EvolutionGoldSecondary.copy(alpha = 0.7f)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("simulate_update_available_button")
-                        ) {
-                            Text(
-                                text = "PREVIEW 'UPDATE AVAILABLE' ALERT BANNER & DIALOG",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = EvolutionGoldSecondary
-                            )
-                        }
-                    }
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showUpdateDialog = false
-                        sessionPrefs.edit()
-                            .putString("last_update_alert_version", BuildConfig.VERSION_NAME)
-                            .apply()
-                        runCatching {
-                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(activeUpdateInfo.downloadUrl)).apply {
-                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                            }
-                            context.startActivity(intent)
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (activeUpdateInfo.isUpdateAvailable) EvolutionGoldSecondary else HoloCyanPrimary,
-                        contentColor = CyberVoidBg
-                    ),
-                    modifier = Modifier.testTag("download_game_update_button")
-                ) {
-                    Text(
-                        text = if (activeUpdateInfo.isUpdateAvailable) "DOWNLOAD UPDATE APK" else "VIEW RELEASES"
-                    )
-                }
-            },
-            dismissButton = {
-                OutlinedButton(
-                    onClick = {
-                        showUpdateDialog = false
-                        sessionPrefs.edit()
-                            .putString("last_update_alert_version", BuildConfig.VERSION_NAME)
-                            .apply()
-                    },
-                    border = BorderStroke(1.dp, HoloCyanPrimary)
-                ) {
-                    Text(if (activeUpdateInfo.isUpdateAvailable) "LATER" else "CONTINUE", color = HoloCyanPrimary)
-                }
-            }
-        )
     }
 }
 
@@ -408,8 +197,6 @@ fun AuthenticatedHoloDashboard(
     currentUserId: String,
     initialTrainerName: String,
     isGoogleSignedIn: Boolean = true,
-    updateCheckResult: GameUpdateCheckResult? = null,
-    onCheckForUpdateClick: () -> Unit = {},
     onRequestGoogleSignIn: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -518,7 +305,7 @@ fun AuthenticatedHoloDashboard(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
-                                text = "DIGI VERSE",
+                                text = "SUNHEART CREST",
                                 style = MaterialTheme.typography.headlineLarge,
                                 color = HoloCyanPrimary,
                                 maxLines = 1
@@ -539,9 +326,9 @@ fun AuthenticatedHoloDashboard(
                         }
                         Text(
                             text = if (isGoogleSignedIn) {
-                                "${uiState.trainerName} • Online Mode"
+                                "${uiState.trainerName} • Aurelia & Argentia Online"
                             } else {
-                                "Local Mode • Train (10 Coins) • Evolve LVL 20+"
+                                "Local Mode • Aetherlon (10 Coins) • Ascend LVL 20+"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -550,30 +337,6 @@ fun AuthenticatedHoloDashboard(
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = onCheckForUpdateClick,
-                        modifier = Modifier.testTag("top_bar_check_update_button")
-                    ) {
-                        BadgedBox(
-                            badge = {
-                                if (updateCheckResult?.isUpdateAvailable == true) {
-                                    Badge(
-                                        containerColor = EvolutionGoldSecondary,
-                                        contentColor = CyberVoidBg
-                                    ) {
-                                        Text("NEW")
-                                    }
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.SystemUpdateAlt,
-                                contentDescription = "Check for Game Update",
-                                tint = if (updateCheckResult?.isUpdateAvailable == true) EvolutionGoldSecondary else HoloCyanPrimary
-                            )
-                        }
-                    }
-
                     IconButton(
                         onClick = { showDailyLoginDialog = true },
                         modifier = Modifier.testTag("daily_login_top_bar_button")
@@ -665,213 +428,175 @@ fun AuthenticatedHoloDashboard(
             )
         },
         bottomBar = {
-            val isOnlineHubTab = currentTab in setOf(
-                DigiPulseTab.TRADE,
-                DigiPulseTab.CHAT,
-                DigiPulseTab.LOGS,
-                DigiPulseTab.LEADERBOARD
-            )
-            NavigationBar(
-                containerColor = HoloSlateSurface,
-                tonalElevation = 8.dp
-            ) {
-                NavigationBarItem(
-                    selected = currentTab == DigiPulseTab.DECK,
-                    onClick = { currentTab = DigiPulseTab.DECK },
-                    icon = { Icon(Icons.Default.Dashboard, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                    label = {
-                        Text(
-                            text = stringResource(R.string.nav_command_deck),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    },
-                    alwaysShowLabel = true,
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = CyberVoidBg,
-                        selectedTextColor = HoloCyanPrimary,
-                        indicatorColor = HoloCyanPrimary
-                    ),
-                    modifier = Modifier.testTag("nav_tab_deck")
+            val isStarterDraftScreen = uiState.needsStarterDraft && uiState.creatures.isEmpty()
+            if (!isStarterDraftScreen) {
+                val isOnlineHubTab = currentTab in setOf(
+                    DigiPulseTab.TRADE,
+                    DigiPulseTab.CHAT,
+                    DigiPulseTab.LOGS,
+                    DigiPulseTab.LEADERBOARD
                 )
-                NavigationBarItem(
-                    selected = currentTab == DigiPulseTab.WORLD,
-                    onClick = { currentTab = DigiPulseTab.WORLD },
-                    icon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                    label = {
-                        Text(
-                            text = "World",
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    },
-                    alwaysShowLabel = true,
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = CyberVoidBg,
-                        selectedTextColor = com.example.ui.theme.BioEmeraldHealth,
-                        indicatorColor = com.example.ui.theme.BioEmeraldHealth
-                    ),
-                    modifier = Modifier.testTag("nav_tab_world")
-                )
-                NavigationBarItem(
-                    selected = currentTab == DigiPulseTab.DRILLS,
-                    onClick = { currentTab = DigiPulseTab.DRILLS },
-                    icon = { Icon(Icons.Default.FitnessCenter, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                    label = {
-                        Text(
-                            text = stringResource(R.string.nav_training_drills),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    },
-                    alwaysShowLabel = true,
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = CyberVoidBg,
-                        selectedTextColor = HoloCyanPrimary,
-                        indicatorColor = HoloCyanPrimary
-                    ),
-                    modifier = Modifier.testTag("nav_tab_drills")
-                )
-                NavigationBarItem(
-                    selected = currentTab == DigiPulseTab.STORE,
-                    onClick = { currentTab = DigiPulseTab.STORE },
-                    icon = { Icon(Icons.Default.Storefront, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                    label = {
-                        Text(
-                            text = stringResource(R.string.nav_store),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    },
-                    alwaysShowLabel = true,
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = CyberVoidBg,
-                        selectedTextColor = EvolutionGoldSecondary,
-                        indicatorColor = EvolutionGoldSecondary
-                    ),
-                    modifier = Modifier.testTag("nav_tab_store")
-                )
-                NavigationBarItem(
-                    selected = isOnlineHubTab,
-                    onClick = {
-                        if (!isOnlineHubTab) {
-                            currentTab = DigiPulseTab.LEADERBOARD
-                        }
-                    },
-                    icon = { Icon(Icons.Default.EmojiEvents, contentDescription = null, modifier = Modifier.size(20.dp)) },
-                    label = {
-                        Text(
-                            text = "Hub",
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            softWrap = false
-                        )
-                    },
-                    alwaysShowLabel = true,
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = CyberVoidBg,
-                        selectedTextColor = EvolutionGoldSecondary,
-                        indicatorColor = EvolutionGoldSecondary
-                    ),
-                    modifier = Modifier.testTag("nav_tab_hub")
-                )
+                NavigationBar(
+                    containerColor = HoloSlateSurface,
+                    tonalElevation = 8.dp
+                ) {
+                    NavigationBarItem(
+                        selected = currentTab == DigiPulseTab.DECK,
+                        onClick = { currentTab = DigiPulseTab.DECK },
+                        icon = { Icon(Icons.Default.Dashboard, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        label = {
+                            Text(
+                                text = stringResource(R.string.nav_command_deck),
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        },
+                        alwaysShowLabel = true,
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = CyberVoidBg,
+                            selectedTextColor = HoloCyanPrimary,
+                            indicatorColor = HoloCyanPrimary
+                        ),
+                        modifier = Modifier.testTag("nav_tab_deck")
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == DigiPulseTab.WORLD,
+                        onClick = { currentTab = DigiPulseTab.WORLD },
+                        icon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        label = {
+                            Text(
+                                text = "World",
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        },
+                        alwaysShowLabel = true,
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = CyberVoidBg,
+                            selectedTextColor = com.example.ui.theme.BioEmeraldHealth,
+                            indicatorColor = com.example.ui.theme.BioEmeraldHealth
+                        ),
+                        modifier = Modifier.testTag("nav_tab_world")
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == DigiPulseTab.DRILLS,
+                        onClick = { currentTab = DigiPulseTab.DRILLS },
+                        icon = { Icon(Icons.Default.FitnessCenter, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        label = {
+                            Text(
+                                text = stringResource(R.string.nav_training_drills),
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        },
+                        alwaysShowLabel = true,
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = CyberVoidBg,
+                            selectedTextColor = HoloCyanPrimary,
+                            indicatorColor = HoloCyanPrimary
+                        ),
+                        modifier = Modifier.testTag("nav_tab_drills")
+                    )
+                    NavigationBarItem(
+                        selected = currentTab == DigiPulseTab.STORE,
+                        onClick = { currentTab = DigiPulseTab.STORE },
+                        icon = { Icon(Icons.Default.Storefront, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        label = {
+                            Text(
+                                text = stringResource(R.string.nav_store),
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        },
+                        alwaysShowLabel = true,
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = CyberVoidBg,
+                            selectedTextColor = EvolutionGoldSecondary,
+                            indicatorColor = EvolutionGoldSecondary
+                        ),
+                        modifier = Modifier.testTag("nav_tab_store")
+                    )
+                    NavigationBarItem(
+                        selected = isOnlineHubTab,
+                        onClick = {
+                            if (!isOnlineHubTab) {
+                                currentTab = DigiPulseTab.LEADERBOARD
+                            }
+                        },
+                        icon = { Icon(Icons.Default.EmojiEvents, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        label = {
+                            Text(
+                                text = "Hub",
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                softWrap = false
+                            )
+                        },
+                        alwaysShowLabel = true,
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = CyberVoidBg,
+                            selectedTextColor = EvolutionGoldSecondary,
+                            indicatorColor = EvolutionGoldSecondary
+                        ),
+                        modifier = Modifier.testTag("nav_tab_hub")
+                    )
+                }
             }
         }
     ) { innerPadding ->
+        val isStarterDraftScreen = uiState.needsStarterDraft && uiState.creatures.isEmpty()
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            // Streamlined Secondary Quick-Tab Bar for Social, Trade, Chat & Daily Logs
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                val quickHubTabs = listOf(
-                    Triple(DigiPulseTab.LEADERBOARD, stringResource(R.string.nav_leaderboard), "nav_tab_leaderboard"),
-                    Triple(DigiPulseTab.TRADE, stringResource(R.string.nav_player_trade), "nav_tab_trade"),
-                    Triple(DigiPulseTab.CHAT, stringResource(R.string.nav_player_chat), "nav_tab_chat"),
-                    Triple(DigiPulseTab.LOGS, stringResource(R.string.nav_daily_logs), "nav_tab_logs")
-                )
-                quickHubTabs.forEach { (tab, label, tag) ->
-                    val selected = currentTab == tab
-                    OutlinedButton(
-                        onClick = { currentTab = tab },
-                        shape = RoundedCornerShape(10.dp),
-                        border = BorderStroke(
-                            width = if (selected) 1.5.dp else 1.dp,
-                            color = if (selected) EvolutionGoldSecondary else HoloCyanPrimary.copy(alpha = 0.35f)
-                        ),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = if (selected) EvolutionGoldSecondary.copy(alpha = 0.2f) else HoloSlateSurface,
-                            contentColor = if (selected) EvolutionGoldSecondary else Color.White
-                        ),
-                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .testTag(tag)
-                    ) {
-                        Text(
-                            text = label.uppercase(),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1
-                        )
-                    }
-                }
-            }
-            // Launch Update Available Alert Banner
-            AnimatedVisibility(visible = updateCheckResult?.isUpdateAvailable == true) {
-                Surface(
-                    color = EvolutionGoldSecondary.copy(alpha = 0.18f),
-                    border = BorderStroke(1.5.dp, EvolutionGoldSecondary),
-                    shape = RoundedCornerShape(12.dp),
+            if (!isStarterDraftScreen) {
+                // Streamlined Secondary Quick-Tab Bar for Social, Trade, Chat & Daily Logs
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .clickable { onCheckForUpdateClick() }
-                        .testTag("launch_update_available_banner")
+                        .padding(horizontal = 16.dp, vertical = 6.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.weight(1f)
+                    val quickHubTabs = listOf(
+                        Triple(DigiPulseTab.LEADERBOARD, stringResource(R.string.nav_leaderboard), "nav_tab_leaderboard"),
+                        Triple(DigiPulseTab.TRADE, stringResource(R.string.nav_player_trade), "nav_tab_trade"),
+                        Triple(DigiPulseTab.CHAT, stringResource(R.string.nav_player_chat), "nav_tab_chat"),
+                        Triple(DigiPulseTab.LOGS, stringResource(R.string.nav_daily_logs), "nav_tab_logs")
+                    )
+                    quickHubTabs.forEach { (tab, label, tag) ->
+                        val selected = currentTab == tab
+                        OutlinedButton(
+                            onClick = { currentTab = tab },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(
+                                width = if (selected) 1.5.dp else 1.dp,
+                                color = if (selected) EvolutionGoldSecondary else HoloCyanPrimary.copy(alpha = 0.35f)
+                            ),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (selected) EvolutionGoldSecondary.copy(alpha = 0.2f) else HoloSlateSurface,
+                                contentColor = if (selected) EvolutionGoldSecondary else Color.White
+                            ),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 6.dp, vertical = 4.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag(tag)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.SystemUpdateAlt,
-                                contentDescription = "Update Available",
-                                tint = EvolutionGoldSecondary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "UPDATE AVAILABLE (v${updateCheckResult?.latestVersionName.orEmpty()})! Tap to download latest APK.",
-                                style = MaterialTheme.typography.labelLarge,
-                                color = EvolutionGoldSecondary
+                                text = label.uppercase(),
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1
                             )
                         }
-                        Text(
-                            text = "UPDATE ➔",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White
-                        )
                     }
                 }
             }
             // Live Status Telemetry Toast Banner
-            AnimatedVisibility(visible = uiState.statusBannerMessage != null) {
+            AnimatedVisibility(visible = !isStarterDraftScreen && uiState.statusBannerMessage != null) {
                 Surface(
                     color = HoloCardElevated,
                     border = BorderStroke(1.dp, HoloCyanPrimary),
@@ -914,13 +639,11 @@ fun AuthenticatedHoloDashboard(
             }
 
             Box(modifier = Modifier.fillMaxSize()) {
-                if (uiState.needsStarterDraft && uiState.creatures.isEmpty()) {
-                    // First-time or Post-Reset player 3-Starter Trio Selection Screen
+                if (isStarterDraftScreen) {
+                    // First-time or Post-Reset player Rookie Starter Selection Screen
                     StarterTrioDraftContent(
                         onConfirmDraft = viewModel::draftStarterTrio,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp, vertical = 12.dp)
+                        modifier = Modifier.fillMaxSize()
                     )
                 } else {
                     when (currentTab) {
@@ -944,6 +667,8 @@ fun AuthenticatedHoloDashboard(
                             onOpenEvolutionMatrix = { showEvolutionSheet = true },
                             onTriggerEvolution = viewModel::evolveCreature,
                             onUnlockSkillNode = viewModel::unlockSkillNode,
+                            onChangeNature = viewModel::changeCompanionNature,
+                            onEquipRelic = viewModel::equipHeldRelic,
                             onOpenDrillsModal = { currentTab = DigiPulseTab.DRILLS }
                         )
                         DigiPulseTab.WORLD -> com.example.ui.screens.WildAndExpeditionsTabContent(
@@ -955,10 +680,18 @@ fun AuthenticatedHoloDashboard(
                             ultraRareMonsterPartsCount = uiState.ultraRareMonsterPartsCount,
                             wildEncounter = uiState.wildEncounter,
                             pendingTamedCreature = uiState.pendingTamedCreature,
+                            acornOrbInventory = uiState.acornOrbInventory,
+                            selectedAcornOrbType = uiState.selectedAcornOrbType,
+                            emeraldReserveEntries = uiState.emeraldReserveEntries,
                             initialTabIndex = wildExpeditionsInitialTab,
                             onScanWildMonster = viewModel::scanWildMonster,
                             onThrowTammingBerry = viewModel::throwTammingBerry,
+                            onSelectAcornOrbType = viewModel::selectAcornOrbType,
+                            onBuyOrCraftAcornOrb = viewModel::buyOrCraftAcornOrb,
+                            onDeployFromEmeraldReserve = viewModel::deployFromEmeraldReserve,
                             onBattleWildMonster = viewModel::battleWildMonster,
+                            onExecuteWildMove = viewModel::executeWildTacticalMove,
+                            onChallengeSanctumLeader = viewModel::challengeSanctumLeader,
                             onSellStandardPart = viewModel::sellStandardMonsterParts,
                             onSellUltraRarePart = viewModel::sellUltraRareMonsterParts,
                             onSellAllParts = viewModel::sellAllMonsterParts,
@@ -1081,10 +814,18 @@ fun AuthenticatedHoloDashboard(
             ultraRareMonsterPartsCount = uiState.ultraRareMonsterPartsCount,
             wildEncounter = uiState.wildEncounter,
             pendingTamedCreature = uiState.pendingTamedCreature,
+            acornOrbInventory = uiState.acornOrbInventory,
+            selectedAcornOrbType = uiState.selectedAcornOrbType,
+            emeraldReserveEntries = uiState.emeraldReserveEntries,
             initialTabIndex = wildExpeditionsInitialTab,
             onScanWildMonster = viewModel::scanWildMonster,
             onThrowTammingBerry = viewModel::throwTammingBerry,
+            onSelectAcornOrbType = viewModel::selectAcornOrbType,
+            onBuyOrCraftAcornOrb = viewModel::buyOrCraftAcornOrb,
+            onDeployFromEmeraldReserve = viewModel::deployFromEmeraldReserve,
             onBattleWildMonster = viewModel::battleWildMonster,
+            onExecuteWildMove = viewModel::executeWildTacticalMove,
+            onChallengeSanctumLeader = viewModel::challengeSanctumLeader,
             onSellStandardPart = viewModel::sellStandardMonsterParts,
             onSellUltraRarePart = viewModel::sellUltraRareMonsterParts,
             onSellAllParts = viewModel::sellAllMonsterParts,
@@ -1142,7 +883,7 @@ fun AuthenticatedHoloDashboard(
             },
             title = {
                 Text(
-                    text = "DAILY LOGIN REWARD // DAY ${uiState.dailyLoginStreakDays}/7",
+                    text = "STARLIGHT DAILY REWARD // DAY ${uiState.dailyLoginStreakDays}/7",
                     style = MaterialTheme.typography.headlineMedium,
                     color = EvolutionGoldSecondary
                 )
@@ -1150,7 +891,7 @@ fun AuthenticatedHoloDashboard(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
-                        text = "Log in every day to build your 7-day retention streak and receive either a small amount of DigiCoins (10–25 DigiCoins) or a random Berry (1–2x Tamming Berries)!",
+                        text = "Tune in every day to build your 7-day Starlight Lucky Number streak and receive either Crest Coins (10–25 Coins) or Master Orin's Acorn Orbs (1–2x Orbs)!",
                         style = MaterialTheme.typography.bodyMedium,
                         color = Color.White
                     )
@@ -1174,7 +915,7 @@ fun AuthenticatedHoloDashboard(
                             border = BorderStroke(1.dp, EvolutionGoldSecondary)
                         ) {
                             Text(
-                                text = "Today's Mystery Drop: 10–25 DigiCoins OR 1–2x Random Tamming Berries!",
+                                text = "Today's Starlight Drop: 10–25 Crest Coins OR 1–2x Acorn Orbs!",
                                 style = MaterialTheme.typography.labelLarge,
                                 color = EvolutionGoldSecondary,
                                 modifier = Modifier.padding(10.dp)
@@ -1226,14 +967,14 @@ fun AuthenticatedHoloDashboard(
             },
             title = {
                 Text(
-                    text = "ARE YOU SURE YOU WANT TO RESET?",
+                    text = "START NEW DUAL-REALM JOURNEY?",
                     style = MaterialTheme.typography.headlineMedium,
                     color = VirusCrimsonError
                 )
             },
             text = {
                 Text(
-                    text = "Are you sure you want to start a New Game? This will permanently wipe your raised Digimon, evolution progress, daily training logs, notifications, and global leaderboard stats, returning you to the 1-Starter Rookie selection screen with 200 DigiCoins (New Game only). This action cannot be undone.",
+                    text = "Are you sure you want to start a New Game? This will permanently wipe your raised Companions, Crest evolution progress, daily training logs, notifications, and Starlight Hall of Fame rankings, returning you to Professor Sylvan's 10-Starter Sanctuary in Breezewood Village with 200 Crest Coins (New Game only). This action cannot be undone.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = Color.White
                 )
@@ -1281,14 +1022,14 @@ fun AuthenticatedHoloDashboard(
             },
             title = {
                 Text(
-                    text = "HOLO-DIGIVOLUTION COMPLETE!",
+                    text = "CREST EVOLUTION COMPLETE!",
                     style = MaterialTheme.typography.headlineMedium,
                     color = EvolutionGoldSecondary
                 )
             },
             text = {
                 Text(
-                    text = "Matrix Evolution Resonance achieved: ${uiState.recentEvolutionUnlocked}! All core stats and combat power have surged.",
+                    text = "Sunheart & SoulCrest Resonance achieved: ${uiState.recentEvolutionUnlocked}! All core stats and combat power have surged.",
                     style = MaterialTheme.typography.bodyLarge,
                     color = Color.White
                 )

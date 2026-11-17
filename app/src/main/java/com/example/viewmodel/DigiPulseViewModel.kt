@@ -3,11 +3,14 @@ package com.example.viewmodel
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.model.AcornOrbInventory
+import com.example.data.model.AcornOrbType
 import com.example.data.model.ChatMessage
 import com.example.data.model.DigiRation
 import com.example.data.model.DigimonCatalog
 import com.example.data.model.DigimonCreature
 import com.example.data.model.DrillType
+import com.example.data.model.EmeraldReserveEntry
 import com.example.data.model.EvolutionBranchRequirement
 import com.example.data.model.ExpeditionSpec
 import com.example.data.model.FriendConnection
@@ -82,6 +85,9 @@ data class DashboardUiState(
     val pendingTamedCreature: DigimonCreature? = null,
     val foodInventory: Map<DigiRation, Int> = emptyMap(),
     val tammingBerryCount: Int = 0,
+    val acornOrbInventory: Map<AcornOrbType, Int> = emptyMap(),
+    val selectedAcornOrbType: AcornOrbType = AcornOrbType.STANDARD_ACORN_ORB,
+    val emeraldReserveEntries: List<EmeraldReserveEntry> = emptyList(),
     val standardMonsterPartsCount: Int = 0,
     val ultraRareMonsterPartsCount: Int = 0,
     val dailyLoginClaimedToday: Boolean = false,
@@ -101,6 +107,12 @@ data class DashboardUiState(
 
     val totalFoodOwned: Int
         get() = foodInventory.values.sum()
+
+    val totalAcornOrbsOwned: Int
+        get() = acornOrbInventory.values.sum().coerceAtLeast(tammingBerryCount)
+
+    fun getAcornOrbCount(orbType: AcornOrbType): Int =
+        acornOrbInventory[orbType] ?: if (orbType == AcornOrbType.STANDARD_ACORN_ORB) tammingBerryCount else 0
 
     val totalMonsterPartsCount: Int
         get() = standardMonsterPartsCount + ultraRareMonsterPartsCount
@@ -150,6 +162,9 @@ class DigiPulseViewModel(
     private val _pendingTamedCreature = MutableStateFlow<DigimonCreature?>(null)
     private val _foodInventory = MutableStateFlow<Map<DigiRation, Int>>(emptyMap())
     private val _tammingBerryCount = MutableStateFlow(0)
+    private val _acornOrbInventory = MutableStateFlow<Map<AcornOrbType, Int>>(emptyMap())
+    private val _selectedAcornOrbType = MutableStateFlow(AcornOrbType.STANDARD_ACORN_ORB)
+    private val _optimisticEmeraldReserve = MutableStateFlow<List<EmeraldReserveEntry>>(emptyList())
     private val _standardMonsterPartsCount = MutableStateFlow(0)
     private val _ultraRareMonsterPartsCount = MutableStateFlow(0)
     private val _lastClaimedDailyLoginDateKey = MutableStateFlow("")
@@ -275,15 +290,38 @@ class DigiPulseViewModel(
         flowOf(emptyList())
     }
 
+    private val acornOrbsFlow = if (isGoogleSignedIn) {
+        repository.observeAcornOrbs()
+            .catch { e ->
+                handleStreamException("acornOrbs", e)
+                emit(emptyList())
+            }
+    } else {
+        flowOf(emptyList())
+    }
+
+    private val emeraldReserveFlow = if (isGoogleSignedIn) {
+        repository.observeEmeraldReserve()
+            .catch { e ->
+                handleStreamException("emeraldReserve", e)
+                emit(emptyList())
+            }
+    } else {
+        flowOf(emptyList())
+    }
+
     private val cloudChatAndFriendsFlow = combine(
         combine(globalChatFlow, sentChatFlow, receivedChatFlow) { g, s, r ->
             (g + s + r).distinctBy { it.id }.sortedBy { it.createdAt?.seconds ?: 0L }
         },
         combine(outgoingFriendshipsFlow, incomingFriendshipsFlow) { outF, inF ->
             (outF + inF).distinctBy { it.id }
+        },
+        combine(acornOrbsFlow, emeraldReserveFlow) { orbs, reserve ->
+            Pair(orbs, reserve)
         }
-    ) { chats, friends ->
-        Pair(chats, friends)
+    ) { chats, friends, orbsAndReserve ->
+        Triple(chats, friends, orbsAndReserve)
     }
 
     private data class CloudStreams(
@@ -294,7 +332,9 @@ class DigiPulseViewModel(
         val openTrades: List<TradeListing>,
         val myTrades: List<TradeListing>,
         val chatMessages: List<ChatMessage>,
-        val friendships: List<FriendConnection>
+        val friendships: List<FriendConnection>,
+        val acornOrbs: List<AcornOrbInventory>,
+        val emeraldReserve: List<EmeraldReserveEntry>
     )
 
     private data class OptimisticStreams(
@@ -326,7 +366,9 @@ class DigiPulseViewModel(
             openTrades = part2.second,
             myTrades = part2.third,
             chatMessages = chatAndFriends.first,
-            friendships = chatAndFriends.second
+            friendships = chatAndFriends.second,
+            acornOrbs = chatAndFriends.third.first,
+            emeraldReserve = chatAndFriends.third.second
         )
     }
 
@@ -384,8 +426,14 @@ class DigiPulseViewModel(
                 Tuple4(coins, coinSec, wild, pendingTamed)
             },
             _foodInventory,
-            combine(_tammingBerryCount, _standardMonsterPartsCount, _ultraRareMonsterPartsCount) { berries, stdParts, ultraParts ->
-                Triple(berries, stdParts, ultraParts)
+            combine(
+                _tammingBerryCount,
+                _standardMonsterPartsCount,
+                _ultraRareMonsterPartsCount,
+                _acornOrbInventory,
+                combine(_selectedAcornOrbType, _optimisticEmeraldReserve) { selOrb, optRes -> selOrb to optRes }
+            ) { berries, stdParts, ultraParts, orbInv, selOrbAndRes ->
+                Tuple5(berries, stdParts, ultraParts, orbInv, selOrbAndRes)
             },
             _lastClaimedDailyLoginDateKey,
             _lastDailyLoginRewardSummary
@@ -398,6 +446,9 @@ class DigiPulseViewModel(
         val berryCount = storeAndCoinMeta.third.first
         val stdPartsCount = storeAndCoinMeta.third.second
         val ultraPartsCount = storeAndCoinMeta.third.third
+        val localOrbInv = storeAndCoinMeta.third.fourth
+        val selectedOrbType = storeAndCoinMeta.third.fifth.first
+        val optReserveList = storeAndCoinMeta.third.fifth.second
         val claimedDateKey = storeAndCoinMeta.fourth
         val claimSummary = storeAndCoinMeta.fifth
         val rawCreatures = if (optimistic.isResetting) {
@@ -546,6 +597,35 @@ class DigiPulseViewModel(
             .coerceIn(1, 7)
         val resolvedDailyRewardText = claimSummary ?: logClaimToday?.statDeltaSummary
 
+        val mergedOrbInventory = buildMap<AcornOrbType, Int> {
+            val cloudByType = cloud.acornOrbs.associateBy { it.resolvedOrbType() }
+            for (orbType in AcornOrbType.entries) {
+                val localVal = localOrbInv[orbType] ?: if (orbType == AcornOrbType.STANDARD_ACORN_ORB) berryCount else 0
+                val cloudVal = cloudByType[orbType]?.quantity
+                val resolved = if (localOrbInv.containsKey(orbType)) {
+                    localVal
+                } else {
+                    cloudVal ?: localVal
+                }
+                put(orbType, resolved.coerceAtLeast(0))
+            }
+            put(AcornOrbType.STANDARD_ACORN_ORB, berryCount.coerceAtLeast(0))
+        }
+
+        val mergedEmeraldReserve = if (optimistic.isResetting) {
+            emptyList()
+        } else {
+            val partyIds = creatures.map { it.id }.toSet()
+            val partySpecies = creatures.map { it.speciesId }.toSet()
+            (optReserveList + cloud.emeraldReserve)
+                .distinctBy { it.id.ifBlank { "${it.speciesId}_${it.capturedAtMs}" } }
+                .map { entry ->
+                    val isPartyMatch = entry.id in partyIds || (entry.inActiveParty && entry.speciesId in partySpecies)
+                    entry.copy(inActiveParty = isPartyMatch)
+                }
+                .sortedByDescending { it.capturedAtMs }
+        }
+
         DashboardUiState(
             isLoading = false,
             creatures = creatures,
@@ -572,6 +652,9 @@ class DigiPulseViewModel(
             pendingTamedCreature = coinMeta.fourth,
             foodInventory = foodInv,
             tammingBerryCount = berryCount,
+            acornOrbInventory = mergedOrbInventory,
+            selectedAcornOrbType = selectedOrbType,
+            emeraldReserveEntries = mergedEmeraldReserve,
             standardMonsterPartsCount = stdPartsCount,
             ultraRareMonsterPartsCount = ultraPartsCount,
             dailyLoginClaimedToday = isDailyClaimedToday,
@@ -599,11 +682,16 @@ class DigiPulseViewModel(
             repository.loadDigiCoins(currentUserId)
         }
         val savedBerries = repository.loadTammingBerryCount(currentUserId)
+        val savedOrbMap = repository.loadLocalAcornOrbInventory(currentUserId).toMutableMap()
+        savedOrbMap[AcornOrbType.STANDARD_ACORN_ORB] = maxOf(savedBerries, savedOrbMap[AcornOrbType.STANDARD_ACORN_ORB] ?: 0)
+        val savedEmeraldReserve = repository.loadLocalEmeraldReserve(currentUserId)
         val (savedStdParts, savedUltraParts) = repository.loadMonsterPartsCounts(currentUserId)
         val savedFood = repository.loadFoodInventory(currentUserId)
         val (savedDailyDate, savedDailySummary) = repository.loadDailyLoginState(currentUserId)
         _digiCoins.value = savedCoins
-        _tammingBerryCount.value = savedBerries
+        _tammingBerryCount.value = savedOrbMap[AcornOrbType.STANDARD_ACORN_ORB] ?: savedBerries
+        _acornOrbInventory.value = savedOrbMap
+        _optimisticEmeraldReserve.value = savedEmeraldReserve
         _standardMonsterPartsCount.value = savedStdParts
         _ultraRareMonsterPartsCount.value = savedUltraParts
         _foodInventory.value = savedFood
@@ -634,6 +722,26 @@ class DigiPulseViewModel(
             _tammingBerryCount.collect { count ->
                 if (!_isResetting.value) {
                     repository.saveTammingBerryCount(currentUserId, count)
+                    val map = _acornOrbInventory.value.toMutableMap()
+                    if (map[AcornOrbType.STANDARD_ACORN_ORB] != count) {
+                        map[AcornOrbType.STANDARD_ACORN_ORB] = count
+                        _acornOrbInventory.value = map
+                    }
+                    repository.saveLocalAcornOrbInventory(currentUserId, _acornOrbInventory.value)
+                }
+            }
+        }
+        viewModelScope.launch {
+            _acornOrbInventory.collect { orbMap ->
+                if (!_isResetting.value) {
+                    repository.saveLocalAcornOrbInventory(currentUserId, orbMap)
+                }
+            }
+        }
+        viewModelScope.launch {
+            _optimisticEmeraldReserve.collect { reserveList ->
+                if (!_isResetting.value) {
+                    repository.saveLocalEmeraldReserve(currentUserId, reserveList)
                 }
             }
         }
@@ -1475,20 +1583,86 @@ class DigiPulseViewModel(
         }
     }
 
+    fun selectAcornOrbType(orbType: AcornOrbType) {
+        _selectedAcornOrbType.value = orbType
+    }
+
+    private fun syncOrbTypeToFirestore(orbType: AcornOrbType) {
+        if (!isGoogleSignedIn) return
+        val qty = _acornOrbInventory.value[orbType]
+            ?: if (orbType == AcornOrbType.STANDARD_ACORN_ORB) _tammingBerryCount.value else 0
+        val gilded = _standardMonsterPartsCount.value
+        val relic = _ultraRareMonsterPartsCount.value
+        viewModelScope.launch {
+            repository.upsertAcornOrbInventory(
+                orbType = orbType,
+                quantity = qty,
+                gildedAcornCount = gilded,
+                relicShardCount = relic
+            )
+        }
+    }
+
+    fun buyOrCraftAcornOrb(orbType: AcornOrbType, useForagedMaterials: Boolean = false, quantity: Int = 1) {
+        val qty = quantity.coerceAtLeast(1)
+        if (useForagedMaterials) {
+            val reqGilded = orbType.craftGildedAcornsCost * qty
+            val reqRelic = orbType.craftRelicShardsCost * qty
+            val ownedGilded = _standardMonsterPartsCount.value
+            val ownedRelic = _ultraRareMonsterPartsCount.value
+            if (ownedGilded < reqGilded || ownedRelic < reqRelic) {
+                _statusBannerMessage.value =
+                    "Need ${reqGilded}x Gilded Acorn${if (reqRelic > 0) " + ${reqRelic}x Relic Shard" else ""} to craft ${qty}x ${orbType.displayName} (You have $ownedGilded Gilded Acorns & $ownedRelic Relic Shards)!"
+                return
+            }
+            _standardMonsterPartsCount.value = (ownedGilded - reqGilded).coerceAtLeast(0)
+            _ultraRareMonsterPartsCount.value = (ownedRelic - reqRelic).coerceAtLeast(0)
+        } else {
+            val totalCost = orbType.costCoins * qty
+            val currentCoins = _digiCoins.value
+            if (currentCoins < totalCost) {
+                _statusBannerMessage.value =
+                    "Not enough Crest Coins for ${qty}x ${orbType.displayName}! Costs $totalCost Crest Coins (you have $currentCoins)."
+                return
+            }
+            _digiCoins.value = (currentCoins - totalCost).coerceAtLeast(0)
+        }
+
+        val map = _acornOrbInventory.value.toMutableMap()
+        val prev = map[orbType] ?: if (orbType == AcornOrbType.STANDARD_ACORN_ORB) _tammingBerryCount.value else 0
+        val newTotal = prev + qty
+        map[orbType] = newTotal
+        _acornOrbInventory.value = map
+        if (orbType == AcornOrbType.STANDARD_ACORN_ORB) {
+            _tammingBerryCount.value = newTotal
+        }
+        _selectedAcornOrbType.value = orbType
+        syncOrbTypeToFirestore(orbType)
+        _statusBannerMessage.value = if (useForagedMaterials) {
+            "Crafted +${qty}x ${orbType.displayName} at Master Orin's Forge! Now holding $newTotal in your Acorn Orb Pouch (Offline-Cached)."
+        } else {
+            "Acquired +${qty}x ${orbType.displayName}! Now holding $newTotal in your Acorn Orb Pouch (Offline-Cached)."
+        }
+    }
+
     fun buyTammingBerriesInStore(quantity: Int = 1) {
         val qty = quantity.coerceAtLeast(1)
         val totalCost = DigimonCatalog.TAMMING_BERRY_COIN_COST * qty
         val currentCoins = _digiCoins.value
         if (currentCoins < totalCost) {
             _statusBannerMessage.value =
-                "Not enough DigiCoins for $qty Tamming Berry! Costs $totalCost DigiCoins (${DigimonCatalog.TAMMING_BERRY_COIN_COST} Coins/berry, you have $currentCoins)."
+                "Not enough Crest Coins for $qty Acorn Orb! Costs $totalCost Crest Coins (${DigimonCatalog.TAMMING_BERRY_COIN_COST} Coins/orb, you have $currentCoins)."
             return
         }
         _digiCoins.value = (currentCoins - totalCost).coerceAtLeast(0)
         val newTotal = _tammingBerryCount.value + qty
         _tammingBerryCount.value = newTotal
+        val map = _acornOrbInventory.value.toMutableMap()
+        map[AcornOrbType.STANDARD_ACORN_ORB] = newTotal
+        _acornOrbInventory.value = map
+        syncOrbTypeToFirestore(AcornOrbType.STANDARD_ACORN_ORB)
         _statusBannerMessage.value =
-            "Purchased +$qty Tamming Berry (-$totalCost DigiCoins)! You now have $newTotal Tamming Berries in your bag for Wild Taming."
+            "Purchased +$qty Acorn Orb (-$totalCost Crest Coins)! You now have $newTotal Acorn Orbs in your pouch for Wild Taming."
     }
 
     fun sellStandardMonsterParts(quantity: Int = 1) {
@@ -1675,7 +1849,7 @@ class DigiPulseViewModel(
 
         upsertOptimisticCreature(updated)
         _statusBannerMessage.value =
-            "⏸ Offline Auto-Training PAUSED for ${active.nickname}! Timer is frozen at ${updated.formattedOfflineTrainingRemaining(nowMs)} remaining until you restart offline training."
+            "⏸ Offline Auto-Training PAUSED for ${active.nickname}! Timer is frozen at ${updated.formattedOfflineTrainingRemaining(nowMs)} — you can now train manually (10 Coins/Drill) or tap Restart Offline Training anytime."
 
         viewModelScope.launch {
             if (isGoogleSignedIn) {
@@ -1961,14 +2135,9 @@ class DigiPulseViewModel(
         val active = uiState.value.activeCreature ?: return
         val nowMs = System.currentTimeMillis()
         if (checkBlockedBy1HpRecovery(active, nowMs)) return
-        if (active.hasOfflineTrainingSession(nowMs)) {
-            val statusDetail = if (active.isOfflineTrainingPaused()) {
-                "PAUSED (${active.formattedOfflineTrainingRemaining(nowMs)} remaining)"
-            } else {
-                "ACTIVE (${active.formattedOfflineTrainingRemaining(nowMs)} remaining)"
-            }
+        if (active.isInOfflineTraining(nowMs)) {
             _statusBannerMessage.value =
-                "Once in Offline Auto-Training ($statusDetail), ${active.nickname} cannot train normally!"
+                "Once in active Offline Auto-Training (${active.formattedOfflineTrainingRemaining(nowMs)} remaining), ${active.nickname} cannot train normally! Pause Offline Training first to train manually."
             return
         }
         val currentCoins = _digiCoins.value
@@ -2030,6 +2199,17 @@ class DigiPulseViewModel(
             val newBond = (active.bondLevel + 2).coerceIn(0, 100)
             val mistakeAdded = if (active.stamina < drillType.staminaCost || active.hunger < 15) 1 else 0
 
+            val newForms = active.withUpdatedMetadataInForms(
+                newSkillNodes = active.allUnlockedSkillNodeIds(),
+                newBonusStats = active.persistedNonTrainingBonusStats(),
+                newExpeditionsCount = active.persistedCompletedExpeditions(),
+                newOfflineTrainEndMs = active.persistedOfflineTrainingEndMs(),
+                newOfflineTrainTickMs = active.persistedOfflineTrainingLastTickMs(),
+                newOfflineTrainPausedRemMs = active.persistedOfflineTrainingPausedRemainingMs(),
+                newOfflineTrainPausedCycleMs = active.persistedOfflineTrainingPausedCycleElapsedMs(),
+                newRecoveryEndsMs = active.persistedRecoveryEndsAtMs()
+            )
+
             val updated = active.copy(
                 attack = newAtk,
                 speed = newSpd,
@@ -2041,6 +2221,9 @@ class DigiPulseViewModel(
                 bondLevel = newBond,
                 careMistakes = active.careMistakes + mistakeAdded,
                 isResting = false,
+                offlineTrainingPausedRemainingMs = active.persistedOfflineTrainingPausedRemainingMs(),
+                offlineTrainingPausedCycleElapsedMs = active.persistedOfflineTrainingPausedCycleElapsedMs(),
+                unlockedForms = newForms,
                 lastUpdatedMs = System.currentTimeMillis()
             )
             val summary = "Grade $grade (-${DigimonCatalog.TRAINING_DRILL_COIN_COST} Coins, $remainingCoins left): +$primaryStatGain ${drillType.primaryStatLabel}, +$evoGain% EVO • LVL ${updated.currentLevel()}/100"
@@ -2176,33 +2359,207 @@ class DigiPulseViewModel(
         }
     }
 
+    fun changeCompanionNature(nature: com.example.data.model.CompanionNature) {
+        val active = uiState.value.activeCreature ?: return
+        val nowMs = System.currentTimeMillis()
+        if (checkBlockedBy1HpRecovery(active, nowMs)) return
+        val newForms = active.withUpdatedMetadataInForms(
+            newNatureCode = nature.code
+        )
+        val updated = active.copy(
+            unlockedForms = newForms,
+            lastUpdatedMs = nowMs
+        )
+        upsertOptimisticCreature(updated)
+        _statusBannerMessage.value =
+            "🌿 Attuned ${active.nickname}'s Nature to ${nature.displayName.uppercase()} (${nature.effectSummary})! Effective CP: ${updated.combatPower()}."
+        if (isGoogleSignedIn) {
+            viewModelScope.launch {
+                repository.updateCreature(updated)
+                syncLeaderboardWithSquad()
+            }
+        }
+    }
+
+    fun equipHeldRelic(relic: com.example.data.model.HeldRelicItem) {
+        val active = uiState.value.activeCreature ?: return
+        val nowMs = System.currentTimeMillis()
+        if (checkBlockedBy1HpRecovery(active, nowMs)) return
+        val newForms = active.withUpdatedMetadataInForms(
+            newRelicCode = relic.code
+        )
+        val updated = active.copy(
+            unlockedForms = newForms,
+            lastUpdatedMs = nowMs
+        )
+        upsertOptimisticCreature(updated)
+        _statusBannerMessage.value =
+            "💎 Equipped ${relic.displayName} on ${active.nickname} (${relic.effectSummary})!"
+        if (isGoogleSignedIn) {
+            viewModelScope.launch {
+                repository.updateCreature(updated)
+                syncLeaderboardWithSquad()
+            }
+        }
+    }
+
+    fun challengeSanctumLeader(leader: com.example.data.model.SanctumLeaderSpec) {
+        val active = uiState.value.activeCreature ?: return
+        val nowMs = System.currentTimeMillis()
+        if (checkBlockedBy1HpRecovery(active, nowMs)) return
+
+        val alreadyEarned = active.hasSanctumBadge(leader.badgeNumber)
+        val elemMult = com.example.data.model.ElementalMatchupEngine.effectivenessMultiplier(
+            attackerAttr = active.attribute,
+            defenderAttr = leader.elementAttribute
+        )
+        val elemBadge = com.example.data.model.ElementalMatchupEngine.effectivenessBadge(elemMult)
+        val playerScore = (active.combatPower() * elemMult).toInt() + (active.currentLevel() * 14) + Random.nextInt(20, 95)
+        val leaderScore = (leader.recommendedLevel * 24) + 120
+        val wonBattle = playerScore >= leaderScore || active.currentLevel() >= leader.recommendedLevel
+
+        val passiveHeal = active.heldRelic().passiveHealBonus
+        val rawHpLoss = if (wonBattle) {
+            Random.nextInt(10, 22)
+        } else {
+            Random.nextInt(28, 48)
+        }
+        val netHp = (active.health - rawHpLoss + passiveHeal).coerceIn(1, 100)
+        val hit1HpLockout = netHp <= 1
+        val recoveryEndMs = if (hit1HpLockout) {
+            nowMs + DigimonCatalog.BATTLE_RECOVERY_5MIN_DURATION_MS
+        } else {
+            active.persistedRecoveryEndsAtMs()
+        }
+
+        val bit = 1 shl (leader.badgeNumber - 1)
+        val newBadgesMask = if (wonBattle) {
+            active.earnedSanctumBadgesMask() or bit
+        } else {
+            active.earnedSanctumBadgesMask()
+        }
+        val coinsEarned = when {
+            wonBattle && !alreadyEarned -> leader.rewardCoins
+            wonBattle -> (leader.rewardCoins / 3).coerceAtLeast(8)
+            else -> 0
+        }
+        if (coinsEarned > 0) {
+            _digiCoins.value = _digiCoins.value + coinsEarned
+        }
+
+        val newForms = active.withUpdatedMetadataInForms(
+            newRecoveryEndsMs = recoveryEndMs,
+            newBadgesMask = newBadgesMask
+        )
+        val updated = active.copy(
+            health = netHp,
+            stamina = (active.stamina - 8).coerceIn(0, 100),
+            bondLevel = (active.bondLevel + if (wonBattle) 3 else 1).coerceIn(0, 100),
+            isResting = false,
+            recoveryEndsAtMs = recoveryEndMs,
+            unlockedForms = newForms,
+            lastUpdatedMs = nowMs
+        )
+        upsertOptimisticCreature(updated)
+
+        val summary = if (wonBattle) {
+            val badgeNote = if (!alreadyEarned) {
+                "🏅 EARNED ${leader.badgeName.uppercase()} (Badge #${leader.badgeNumber}/16) & +$coinsEarned Crest Coins!"
+            } else {
+                "Defended Sanctum Title vs ${leader.leaderName} (+$coinsEarned Rematch Crest Coins)!"
+            }
+            "SANCTUM VICTORY vs Leader ${leader.leaderName}'s ${leader.aceSpeciesName} ($elemBadge)! $badgeNote"
+        } else {
+            "Sanctum Leader ${leader.leaderName}'s ${leader.aceSpeciesName} (Rec. LVL ${leader.recommendedLevel}) held the line ($elemBadge)! Train ${active.nickname} or use a Super-Effective element and challenge again."
+        }
+
+        val logEntry = prependOptimisticLog(
+            TrainingLogEntry(
+                userId = currentUserId,
+                creatureId = active.id,
+                creatureName = active.nickname,
+                activityType = "Arena Sparring",
+                grade = if (wonBattle) "S" else "B",
+                statDeltaSummary = summary.take(190),
+                xpGained = if (wonBattle) 140 else 45,
+                dateKey = todayDateKey()
+            )
+        )
+        _statusBannerMessage.value = summary
+
+        viewModelScope.launch {
+            if (isGoogleSignedIn) {
+                repository.updateCreature(updated)
+                repository.addTrainingLog(logEntry)
+            }
+            checkAndDispatchThresholds(updated)
+            syncLeaderboardWithSquad()
+        }
+    }
+
     // Egg hatching is removed; all monsters beyond the 1 starter must be tamed in the wild using Tamming Berries (2 DigiCoins each)
     fun scanWildMonster(preferredSpeciesId: String? = null) {
-        val pool = DigimonCatalog.wildTamableSpecs
+        var radarEvadedNotice: String? = null
         val chosen = if (!preferredSpeciesId.isNullOrBlank()) {
-            DigimonCatalog.getSpec(preferredSpeciesId)
+            val targetSpec = DigimonCatalog.getSpec(preferredSpeciesId)
+            val lockChance = targetSpec.wildRarityTier().radarLockChancePercent
+            if (!targetSpec.isRareLevel100Spec && Random.nextInt(100) < lockChance) {
+                targetSpec
+            } else {
+                radarEvadedNotice =
+                    "${targetSpec.speciesName} (${targetSpec.wildRarityTier().displayName} • $lockChance% Radar Lock) evaded the scanner! Encountered a different wild signal instead."
+                DigimonCatalog.rollWeightedWildMonster(Random)
+            }
         } else {
-            pool[Random.nextInt(pool.size)]
+            DigimonCatalog.rollWeightedWildMonster(Random)
         }
-        val baseRate = when (chosen.stage) {
-            "Rookie" -> Random.nextInt(55, 76)
-            "Champion" -> Random.nextInt(38, 56)
-            "Ultimate" -> Random.nextInt(25, 42)
-            else -> Random.nextInt(15, 28)
+
+        val rarity = chosen.wildRarityTier()
+        val rawBaseRate = Random.nextInt(rarity.minBaseTameRate, rarity.maxBaseTameRate + 1)
+        // Within each rarity tier, monsters with higher total stats are even harder to capture
+        val statDifficultyPenalty = when (rarity) {
+            com.example.data.model.WildRarityTier.COMMON -> ((chosen.totalBaseStats() - 170).coerceAtLeast(0) / 10).coerceAtMost(6)
+            com.example.data.model.WildRarityTier.UNCOMMON -> ((chosen.totalBaseStats() - 250).coerceAtLeast(0) / 14).coerceAtMost(5)
+            com.example.data.model.WildRarityTier.RARE -> ((chosen.totalBaseStats() - 160).coerceAtLeast(0) / 16).coerceAtMost(4)
+            com.example.data.model.WildRarityTier.ULTRA_RARE -> ((chosen.totalBaseStats() - 430).coerceAtLeast(0) / 20).coerceAtMost(3)
+            com.example.data.model.WildRarityTier.LEGENDARY_APEX -> 1
         }
+        val baseRate = (rawBaseRate - statDifficultyPenalty).coerceIn(rarity.minBaseTameRate, rarity.maxBaseTameRate)
+
         val wildLvl = when (chosen.stage) {
             "Rookie" -> Random.nextInt(1, 12)
             "Champion" -> Random.nextInt(20, 35)
             "Ultimate" -> Random.nextInt(40, 58)
-            else -> Random.nextInt(65, 80)
+            else -> Random.nextInt(65, 85)
         }
-        val isUltraRare = chosen.stage == "Mega" || chosen.stage == "Ultimate" || Random.nextInt(100) < 30
+        val activeCharm = uiState.value.activeCreature?.heldRelic() == com.example.data.model.HeldRelicItem.LUCKY_CAPTURE_CHARM
+        val shinyOddsPercent = if (activeCharm) 10 else 5
+        val isChromatic = Random.nextInt(100) < shinyOddsPercent
+        val wildNature = com.example.data.model.CompanionNature.entries[Random.nextInt(com.example.data.model.CompanionNature.entries.size)]
+
+        val isUltraRare = isChromatic ||
+            rarity == com.example.data.model.WildRarityTier.LEGENDARY_APEX ||
+            rarity == com.example.data.model.WildRarityTier.ULTRA_RARE ||
+            rarity == com.example.data.model.WildRarityTier.RARE ||
+            Random.nextInt(100) < 15
         val partLabel = if (isUltraRare) {
-            "Ultra Rare ${chosen.speciesName} Core Part (${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} DigiCoins)"
+            "Relic Shard (${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} Crest Coins)"
         } else {
-            "${chosen.speciesName} Monster Part (${DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS} DigiCoins)"
+            "Gilded Acorn (${DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS} Crest Coins)"
         }
-        val rarityPrefix = if (isUltraRare) "★ ULTRA RARE WILD " else "Wild "
+        val shinyPrefix = if (isChromatic) "✨ STARLIGHT CHROMATIC " else ""
+        val rarityPrefix = when (rarity) {
+            com.example.data.model.WildRarityTier.LEGENDARY_APEX -> "★★ LEGENDARY SOVEREIGN "
+            com.example.data.model.WildRarityTier.ULTRA_RARE -> "★ ULTRA RARE "
+            com.example.data.model.WildRarityTier.RARE -> "◆ RARE "
+            com.example.data.model.WildRarityTier.UNCOMMON -> "◇ UNCOMMON "
+            com.example.data.model.WildRarityTier.COMMON -> "Wild "
+        }
+        val detailMsg = if (radarEvadedNotice != null) {
+            "$radarEvadedNotice • ${rarity.displayName} (${rarity.spawnChancePercent}% Spawn) • Base Capture: $baseRate% • Nature: ${wildNature.displayName}"
+        } else {
+            "Wild HP: 100% • Nature: ${wildNature.displayName} (${wildNature.effectSummary}) • Use Mercy Slash (1% HP = +35% Capture) & Status Wave (+12–25% Capture) before throwing Acorn Orbs!"
+        }
         _wildEncounter.value = WildEncounterState(
             speciesId = chosen.speciesId,
             speciesName = chosen.speciesName,
@@ -2210,13 +2567,170 @@ class DigiPulseViewModel(
             attribute = chosen.attribute,
             wildLevel = wildLvl,
             baseSuccessRatePercent = baseRate,
+            rarityTier = rarity,
             tameProgress = 0,
             berriesUsed = 0,
             isUltraRareWild = isUltraRare,
             droppedPartName = partLabel,
-            lastRollOutcomeTitle = "$rarityPrefix${chosen.speciesName} (${chosen.stage}) Appeared!",
-            lastRollOutcomeDetail = "Tame Rate: $baseRate% (Throw Berry) OR Battle for $partLabel!"
+            lastRollOutcomeTitle = "$shinyPrefix$rarityPrefix${chosen.speciesName} (${chosen.stage}) Appeared!",
+            lastRollOutcomeDetail = detailMsg,
+            wildHpPercent = 100,
+            statusEffect = com.example.data.model.WildStatusEffect.NONE,
+            isChromaticShiny = isChromatic,
+            wildNatureName = wildNature.displayName,
+            lastEffectivenessLabel = ""
         )
+        if (radarEvadedNotice != null) {
+            _statusBannerMessage.value = radarEvadedNotice
+        }
+    }
+
+    /**
+     * Classic 4-Move Tactical Turn-Based Combat against the current Wild Companion.
+     * - Move 0 (ELEMENTAL_STRIKE): Full STAB + Elemental Effectiveness (2.0x / 1.0x / 0.5x). Knocking Wild HP to 0% loots Gilded Acorns / Relic Shards!
+     * - Move 1 (MERCY_SUBDUE - Mercy Slash): Controlled False-Swipe strike that NEVER drops Wild HP below 1% (maximizes +35% Red-HP Capture Bonus!).
+     * - Move 2 (STATUS_WAVE): Inflicts SLEEP (+25% Capture), PARALYZED (+18% Capture), or BURNED (+12% Capture) and deals light chip damage (clamped >= 1%).
+     * - Move 3 (CREST_SURGE): Restores +18 HP to active companion, boosts Bond, and deals light Aether chip (clamped >= 1%).
+     */
+    fun executeWildTacticalMove(moveIndex: Int) {
+        val active = uiState.value.activeCreature ?: return
+        val nowMs = System.currentTimeMillis()
+        if (checkBlockedBy1HpRecovery(active, nowMs)) return
+
+        val currentEncounter = _wildEncounter.value ?: run {
+            scanWildMonster()
+            return
+        }
+        if (currentEncounter.isTamed) {
+            scanWildMonster()
+            return
+        }
+
+        val moves = DigimonCatalog.getFourBattleMoves(active)
+        val move = moves.getOrElse(moveIndex.coerceIn(0, moves.lastIndex)) { moves.first() }
+        val elemMult = com.example.data.model.ElementalMatchupEngine.effectivenessMultiplier(
+            attackerAttr = move.elementAttribute,
+            defenderAttr = currentEncounter.attribute
+        )
+        val elemBadge = com.example.data.model.ElementalMatchupEngine.effectivenessBadge(elemMult)
+        val stabMult = if (move.elementAttribute.equals(active.attribute, ignoreCase = true)) 1.25f else 1.0f
+
+        val rawDamagePercent: Int
+        var newStatus = currentEncounter.statusEffect
+        var selfHealAmount = active.heldRelic().passiveHealBonus
+
+        when (move.category) {
+            com.example.data.model.BattleMoveCategory.ELEMENTAL_STRIKE -> {
+                val baseStrike = Random.nextInt(32, 48)
+                rawDamagePercent = (baseStrike * elemMult * stabMult).toInt().coerceIn(14, 95)
+            }
+            com.example.data.model.BattleMoveCategory.MERCY_SUBDUE -> {
+                val subdueHit = Random.nextInt(34, 52)
+                rawDamagePercent = subdueHit
+            }
+            com.example.data.model.BattleMoveCategory.STATUS_WAVE -> {
+                rawDamagePercent = Random.nextInt(8, 16)
+                newStatus = when {
+                    move.moveName.contains("Sleep", ignoreCase = true) -> com.example.data.model.WildStatusEffect.SLEEP
+                    move.moveName.contains("Paralyze", ignoreCase = true) -> com.example.data.model.WildStatusEffect.PARALYZED
+                    else -> com.example.data.model.WildStatusEffect.BURNED
+                }
+            }
+            com.example.data.model.BattleMoveCategory.CREST_SURGE -> {
+                rawDamagePercent = Random.nextInt(14, 24)
+                selfHealAmount += 18
+            }
+        }
+
+        val newWildHp = when (move.category) {
+            com.example.data.model.BattleMoveCategory.ELEMENTAL_STRIKE ->
+                (currentEncounter.wildHpPercent - rawDamagePercent).coerceAtLeast(0)
+            else ->
+                // Mercy Slash, Status Wave, and Crest Surge NEVER knock out a wild companion below 1% HP!
+                (currentEncounter.wildHpPercent - rawDamagePercent).coerceAtLeast(1)
+        }
+
+        if (newWildHp <= 0) {
+            // Wild companion was knocked out by Signature Elemental Strike -> Loot Gilded Acorns / Relic Shards!
+            battleWildMonster()
+            return
+        }
+
+        // Wild companion counter-attack (Asleep or Paralyzed wild companions have a high chance to skip counter-attack!)
+        val statusStunSkipped = when (newStatus) {
+            com.example.data.model.WildStatusEffect.SLEEP -> Random.nextInt(100) < 75
+            com.example.data.model.WildStatusEffect.PARALYZED -> Random.nextInt(100) < 50
+            else -> false
+        }
+        val counterDamage = if (statusStunSkipped) {
+            0
+        } else {
+            val baseCounter = when (currentEncounter.stage) {
+                "Mega" -> Random.nextInt(16, 28)
+                "Ultimate" -> Random.nextInt(12, 22)
+                "Champion" -> Random.nextInt(9, 17)
+                else -> Random.nextInt(6, 13)
+            }
+            val burnReduction = if (newStatus == com.example.data.model.WildStatusEffect.BURNED) 0.65f else 1.0f
+            (baseCounter * burnReduction).toInt().coerceAtLeast(3)
+        }
+
+        val updatedHealth = (active.health - counterDamage + selfHealAmount).coerceIn(1, 100)
+        val hit1HpLockout = updatedHealth <= 1
+        val recoveryEndMs = if (hit1HpLockout) {
+            nowMs + DigimonCatalog.BATTLE_RECOVERY_5MIN_DURATION_MS
+        } else {
+            active.persistedRecoveryEndsAtMs()
+        }
+
+        val newForms = active.withUpdatedMetadataInForms(
+            newRecoveryEndsMs = recoveryEndMs
+        )
+        val updatedPartner = active.copy(
+            health = updatedHealth,
+            stamina = (active.stamina - 4).coerceIn(0, 100),
+            bondLevel = (active.bondLevel + 1).coerceIn(0, 100),
+            isResting = false,
+            recoveryEndsAtMs = recoveryEndMs,
+            unlockedForms = newForms,
+            lastUpdatedMs = nowMs
+        )
+        upsertOptimisticCreature(updatedPartner)
+
+        val updatedEncounter = currentEncounter.copy(
+            wildHpPercent = newWildHp,
+            statusEffect = newStatus,
+            lastEffectivenessLabel = if (move.category == com.example.data.model.BattleMoveCategory.ELEMENTAL_STRIKE) elemBadge else move.moveName.uppercase(),
+            lastRollOutcomeTitle = "${active.nickname} used ${move.moveName}! (Wild HP: $newWildHp%)",
+            lastRollOutcomeDetail = buildString {
+                if (move.category == com.example.data.model.BattleMoveCategory.MERCY_SUBDUE && newWildHp == 1) {
+                    append("MERCY SLASH SUBDUED ${currentEncounter.speciesName} TO 1% HP (+35% RED-HP CAPTURE BONUS)! ")
+                } else if (move.category == com.example.data.model.BattleMoveCategory.ELEMENTAL_STRIKE) {
+                    append("$elemBadge! Dealt -$rawDamagePercent% HP. ")
+                } else {
+                    append("Dealt -$rawDamagePercent% HP. ")
+                }
+                if (newStatus != com.example.data.model.WildStatusEffect.NONE) {
+                    append("Status: ${newStatus.badgeLabel}! ")
+                }
+                if (statusStunSkipped) {
+                    append("Wild ${currentEncounter.speciesName} is immobilized & couldn't counter-attack!")
+                } else {
+                    append("Wild counter-hit: -$counterDamage HP${if (selfHealAmount > 0) " (+$selfHealAmount HP restored)" else ""}.")
+                }
+            }
+        )
+        _wildEncounter.value = updatedEncounter
+
+        val totalCaptureBonus = updatedEncounter.totalTacticalCaptureBonusPercent() + active.heldRelic().captureBonusPercent
+        _statusBannerMessage.value =
+            "${move.moveName} hit ${currentEncounter.speciesName}! Wild HP: $newWildHp% • Tactical Capture Bonus: +$totalCaptureBonus%!"
+
+        if (isGoogleSignedIn) {
+            viewModelScope.launch {
+                repository.updateCreature(updatedPartner)
+            }
+        }
     }
 
     fun battleWildMonster() {
@@ -2229,7 +2743,9 @@ class DigiPulseViewModel(
             return
         }
 
-        val partsDropped = if (Random.nextInt(100) < 35) 2 else 1
+        val basePartsDropped = if (Random.nextInt(100) < 35) 2 else 1
+        val shinyBonusParts = if (currentEncounter.isChromaticShiny) 1 else 0
+        val partsDropped = basePartsDropped + shinyBonusParts
         val isUltraRare = currentEncounter.isUltraRareWild
         if (isUltraRare) {
             _ultraRareMonsterPartsCount.value = _ultraRareMonsterPartsCount.value + partsDropped
@@ -2239,17 +2755,24 @@ class DigiPulseViewModel(
 
         // Wild battles deal combat damage and can drop the monster down to 1 HP!
         // When a monster reaches 1 HP, it enters a mandatory 5-minute recovery lockout before you can do anything with that monster again.
-        val fierceCounterHit = Random.nextInt(100) < 38 || active.health <= 42
+        val elemMult = com.example.data.model.ElementalMatchupEngine.effectivenessMultiplier(
+            attackerAttr = active.attribute,
+            defenderAttr = currentEncounter.attribute
+        )
+        val elemBadge = com.example.data.model.ElementalMatchupEngine.effectivenessBadge(elemMult)
+        val fierceCounterHit = (elemMult < 1.0f && Random.nextInt(100) < 38) || active.health <= 35
         val rawDamage = when (currentEncounter.stage) {
-            "Mega" -> Random.nextInt(45, 75)
-            "Ultimate" -> Random.nextInt(36, 62)
-            "Champion" -> Random.nextInt(28, 50)
-            else -> Random.nextInt(22, 42)
+            "Mega" -> Random.nextInt(40, 68)
+            "Ultimate" -> Random.nextInt(32, 56)
+            "Champion" -> Random.nextInt(24, 44)
+            else -> Random.nextInt(18, 36)
         }
+        val reducedByAdvantage = if (elemMult >= 1.8f) (rawDamage * 0.65f).toInt() else rawDamage
+        val passiveHeal = active.heldRelic().passiveHealBonus
         val newHealth = if (fierceCounterHit) {
             1
         } else {
-            (active.health - rawDamage).coerceAtLeast(1)
+            (active.health - reducedByAdvantage + passiveHeal).coerceIn(1, 100)
         }
 
         val hit1HpLockout = newHealth <= 1
@@ -2280,9 +2803,9 @@ class DigiPulseViewModel(
         upsertOptimisticCreature(updated)
 
         val partTypeLabel = if (isUltraRare) {
-            "Ultra Rare Monster ${if (partsDropped == 1) "Part" else "Parts"} (Sells for ${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} DigiCoins each)"
+            "Relic ${if (partsDropped == 1) "Shard" else "Shards"} (Sells for ${DigimonCatalog.ULTRA_RARE_MONSTER_PART_SELL_COINS} Crest Coins each)"
         } else {
-            "Standard Monster ${if (partsDropped == 1) "Part" else "Parts"} (Sells for ${DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS} DigiCoins each)"
+            "Gilded ${if (partsDropped == 1) "Acorn" else "Acorns"} (Sells for ${DigimonCatalog.STANDARD_MONSTER_PART_SELL_COINS} Crest Coins each)"
         }
 
         val recoveryNotice = if (hit1HpLockout) {
@@ -2292,7 +2815,7 @@ class DigiPulseViewModel(
         }
 
         val summary =
-            "Battled Wild ${currentEncounter.speciesName} (${currentEncounter.stage}): Looted +${partsDropped}x $partTypeLabel!$recoveryNotice"
+            "Defeated Wild ${currentEncounter.speciesName} ($elemBadge): Looted +${partsDropped}x $partTypeLabel!$recoveryNotice"
         val battleLog = prependOptimisticLog(
             TrainingLogEntry(
                 userId = currentUserId,
@@ -2348,51 +2871,99 @@ class DigiPulseViewModel(
             scanWildMonster()
             return
         }
-        val ownedBerries = _tammingBerryCount.value
-        if (ownedBerries <= 0) {
+
+        val currentState = uiState.value
+        val preferredOrb = _selectedAcornOrbType.value
+        val chosenOrb = if (currentState.getAcornOrbCount(preferredOrb) > 0) {
+            preferredOrb
+        } else {
+            AcornOrbType.entries.firstOrNull { currentState.getAcornOrbCount(it) > 0 } ?: preferredOrb
+        }
+        val ownedOfChosen = currentState.getAcornOrbCount(chosenOrb)
+        if (ownedOfChosen <= 0) {
             _statusBannerMessage.value =
-                "You have 0 Tamming Berries in your bag! Go to the Store tab to buy Tamming Berries (${DigimonCatalog.TAMMING_BERRY_COIN_COST} DigiCoins each) first."
+                "You have 0 Acorn Orbs in your pouch! Craft Acorn Orbs below with Gilded Acorns or buy them for ${DigimonCatalog.TAMMING_BERRY_COIN_COST} Crest Coins."
             return
         }
-        val remainingBerries = (ownedBerries - 1).coerceAtLeast(0)
-        _tammingBerryCount.value = remainingBerries
 
-        val activeBonus = uiState.value.activeCreature?.tammingRateBonusPercent() ?: 0
-        val effectiveSuccessChance = (currentEncounter.baseSuccessRatePercent + activeBonus).coerceIn(15, 92)
+        val remainingOfChosen = (ownedOfChosen - 1).coerceAtLeast(0)
+        val updatedOrbMap = _acornOrbInventory.value.toMutableMap()
+        updatedOrbMap[chosenOrb] = remainingOfChosen
+        _acornOrbInventory.value = updatedOrbMap
+        if (chosenOrb == AcornOrbType.STANDARD_ACORN_ORB) {
+            _tammingBerryCount.value = remainingOfChosen
+        }
+        _selectedAcornOrbType.value = chosenOrb
+        syncOrbTypeToFirestore(chosenOrb)
+
+        val rarity = currentEncounter.rarityTier
+        val activeBonus = active?.tammingRateBonusPercent() ?: 0
+        // Rarer monsters have half or a third of the skill bonus effectiveness so they remain challenging
+        val scaledSkillBonus = when (rarity) {
+            com.example.data.model.WildRarityTier.COMMON -> activeBonus
+            com.example.data.model.WildRarityTier.UNCOMMON -> (activeBonus * 3) / 4
+            com.example.data.model.WildRarityTier.RARE -> activeBonus / 2
+            com.example.data.model.WildRarityTier.ULTRA_RARE -> activeBonus / 3
+            com.example.data.model.WildRarityTier.LEGENDARY_APEX -> activeBonus / 4
+        }
+        // Tactical Weakened-HP (+10% to +35%), Status Wave (+12% to +25%), Held Capture Charm (+12%), and Specialty Acorn Orb bonuses!
+        val tacticalBonus = currentEncounter.totalTacticalCaptureBonusPercent()
+        val heldCharmBonus = active?.heldRelic()?.captureBonusPercent ?: 0
+        val orbSpecialtyBonus = chosenOrb.effectiveCaptureBonusFor(currentEncounter)
+        val effectiveSuccessChance = (
+            currentEncounter.baseSuccessRatePercent +
+                scaledSkillBonus +
+                tacticalBonus +
+                heldCharmBonus +
+                orbSpecialtyBonus
+            ).coerceIn(3, 95)
         val roll = Random.nextInt(100)
         val newBerriesUsed = currentEncounter.berriesUsed + 1
+        val hpCaptureBoostGain = when {
+            currentEncounter.wildHpPercent in 1..20 -> 14
+            currentEncounter.wildHpPercent in 21..50 -> 8
+            else -> 0
+        }
+        val orbGaugeBoost = if (orbSpecialtyBonus >= 18) 8 else if (orbSpecialtyBonus > 0) 4 else 0
 
         val (gain, outcomeTitle, outcomeDetail) = if (roll < effectiveSuccessChance) {
             val critRoll = Random.nextInt(100)
             when {
-                critRoll < 14 -> Triple(
+                rarity.instantCritChancePercent > 0 && critRoll < rarity.instantCritChancePercent -> Triple(
                     100,
-                    "CRITICAL INSTANT TAME! (Roll ${100 - roll}/100)",
-                    "Lucky Critical Roll! ${currentEncounter.speciesName} was instantly tamed by the Tamming Berry!"
+                    "CRITICAL ${chosenOrb.displayName.uppercase()} CAPTURE!",
+                    "Lucky Critical Lock (${rarity.instantCritChancePercent}% Crit Odds)! ${currentEncounter.speciesName} (${rarity.displayName}) was instantly captured in a ${chosenOrb.displayName}!"
                 )
-                critRoll < 50 -> {
-                    val surge = Random.nextInt(30, 48)
+                critRoll < 38 -> {
+                    val surge = Random.nextInt(rarity.minSurgeGain, rarity.maxSurgeGain + 1) + hpCaptureBoostGain + orbGaugeBoost
                     Triple(
                         surge,
-                        "SUPER TAME SURGE! (+$surge% Tame)",
-                        "High random resonance roll! ${currentEncounter.speciesName}'s tame meter surged by +$surge%."
+                        "${chosenOrb.displayName.uppercase()} SURGE! (+$surge% Capture)",
+                        "High resonance lock vs ${currentEncounter.speciesName} (Wild HP ${currentEncounter.wildHpPercent}%, ${currentEncounter.statusEffect.badgeLabel})! Capture gauge surged by +$surge%."
                     )
                 }
                 else -> {
-                    val hit = Random.nextInt(16, 29)
+                    val hit = Random.nextInt(rarity.minHitGain, rarity.maxHitGain + 1) + hpCaptureBoostGain + orbGaugeBoost
                     Triple(
                         hit,
-                        "TAMMING BERRY HIT! (+$hit% Tame)",
-                        "Successful random roll! ${currentEncounter.speciesName}'s tame meter rose by +$hit%."
+                        "${chosenOrb.displayName.uppercase()} LOCKED IN! (+$hit% Capture)",
+                        "${chosenOrb.displayName} connected on ${currentEncounter.speciesName} (Effective Rate $effectiveSuccessChance%)! Capture gauge rose by +$hit%."
                     )
                 }
             }
         } else {
-            val graze = Random.nextInt(0, 6)
+            val deltaRange = rarity.resistPenaltyOrGraze
+            val resistDelta = Random.nextInt(deltaRange.first, deltaRange.last + 1)
+            val deltaText = if (resistDelta >= 0) "+$resistDelta% Capture" else "$resistDelta% Capture"
+            val resistDetail = if (resistDelta < 0) {
+                "Fierce ${rarity.displayName} resistance ($effectiveSuccessChance% Capture Rate)! Use Mercy Slash & Status Wave to weaken ${currentEncounter.speciesName} first!"
+            } else {
+                "Broke free from ${chosenOrb.displayName} ($effectiveSuccessChance% Capture Rate)! Weaken ${currentEncounter.speciesName} to Red HP (1–20%) or inflict Sleep/Paralyze!"
+            }
             Triple(
-                graze,
-                "WILD MONSTER RESISTED! (+$graze% Tame)",
-                "Unlucky random roll (${100 - roll}% vs $effectiveSuccessChance% rate)! ${currentEncounter.speciesName} shook off the Tamming Berry."
+                resistDelta,
+                "WILD ${rarity.displayName.uppercase()} BROKE FREE! ($deltaText)",
+                resistDetail
             )
         }
 
@@ -2408,29 +2979,41 @@ class DigiPulseViewModel(
         )
 
         if (nowTamed) {
-            finalizeWildTaming(currentEncounter)
+            finalizeWildTaming(currentEncounter, chosenOrb)
         } else {
-            _statusBannerMessage.value = "$outcomeTitle — ${currentEncounter.speciesName} Tame Gauge: $updatedProgress/100% ($remainingBerries Berries left in bag)"
+            _statusBannerMessage.value = "$outcomeTitle — ${currentEncounter.speciesName} Capture Gauge: $updatedProgress/100% ($remainingOfChosen ${chosenOrb.displayName}s left)"
         }
     }
 
-    private fun finalizeWildTaming(encounter: WildEncounterState) {
+    private fun finalizeWildTaming(
+        encounter: WildEncounterState,
+        orbUsed: AcornOrbType = _selectedAcornOrbType.value
+    ) {
         val spec = DigimonCatalog.getSpec(encounter.speciesId)
         val nowMs = System.currentTimeMillis()
         val localId = "tamed_${nowMs}_${spec.speciesId}"
+        val shinyStatBoost = if (encounter.isChromaticShiny) 6 else 0
         val tamedBaseBonus = if (spec.stage == "Rookie") {
-            0
+            shinyStatBoost * 4
         } else {
-            (spec.baseAttack + spec.baseDefense + spec.baseSpeed + spec.baseWisdom - 172).coerceAtLeast(0)
+            (spec.baseAttack + spec.baseDefense + spec.baseSpeed + spec.baseWisdom - 172 + (shinyStatBoost * 4)).coerceAtLeast(0)
         }
+        val matchedNature = com.example.data.model.CompanionNature.entries.firstOrNull {
+            it.displayName.equals(encounter.wildNatureName, ignoreCase = true)
+        } ?: com.example.data.model.CompanionNature.BRAVE
+        val defaultRelic = com.example.data.model.HeldRelicItem.SEARING_CHARCOAL
+        val shinyFlag = if (encounter.isChromaticShiny) 1 else 0
+        val friendOrbBondBoost = if (orbUsed == AcornOrbType.VERDANT_FRIEND_ORB) 25 else 0
+        val startingBond = ((if (encounter.isChromaticShiny) 35 else 20) + friendOrbBondBoost).coerceAtMost(100)
         val initialForms = buildList {
             add(spec.speciesId)
             if (tamedBaseBonus > 0) add("bn:$tamedBaseBonus")
+            add("rg:${matchedNature.code}:${defaultRelic.code}:$shinyFlag:0")
         }
         val tamedCreature = DigimonCreature(
             id = localId,
             userId = currentUserId,
-            nickname = spec.speciesName,
+            nickname = if (encounter.isChromaticShiny) "★${spec.speciesName}" else spec.speciesName,
             speciesId = spec.speciesId,
             speciesName = spec.speciesName,
             stage = spec.stage,
@@ -2439,12 +3022,12 @@ class DigiPulseViewModel(
             stamina = 100,
             hunger = 85,
             evolutionProgress = 0,
-            attack = spec.baseAttack,
-            defense = spec.baseDefense,
-            speed = spec.baseSpeed,
-            wisdom = spec.baseWisdom,
+            attack = spec.baseAttack + shinyStatBoost,
+            defense = spec.baseDefense + shinyStatBoost,
+            speed = spec.baseSpeed + shinyStatBoost,
+            wisdom = spec.baseWisdom + shinyStatBoost,
             nonTrainingBonusStats = tamedBaseBonus,
-            bondLevel = 20,
+            bondLevel = startingBond,
             careMistakes = 0,
             isResting = false,
             unlockedForms = initialForms,
@@ -2452,14 +3035,71 @@ class DigiPulseViewModel(
         )
 
         val currentSquad = uiState.value.creatures
-        if (currentSquad.size >= DigimonCatalog.MAX_SQUAD_SIZE) {
+        val goesToPartyDirectly = currentSquad.size < DigimonCatalog.MAX_SQUAD_SIZE
+
+        // Record in the offline-cached + Firestore Emerald Reserve Collection Inventory!
+        val reserveEntry = EmeraldReserveEntry(
+            id = localId,
+            userId = currentUserId,
+            speciesId = spec.speciesId,
+            speciesName = spec.speciesName,
+            nickname = tamedCreature.nickname,
+            stage = spec.stage,
+            elementAttribute = spec.attribute,
+            rarityTier = encounter.rarityTier.name,
+            capturedLevel = encounter.wildLevel.coerceIn(1, 100),
+            attack = tamedCreature.attack,
+            defense = tamedCreature.defense,
+            speed = tamedCreature.speed,
+            wisdom = tamedCreature.wisdom,
+            bondLevel = startingBond,
+            natureCode = matchedNature.code,
+            heldRelicCode = defaultRelic.code,
+            chromaticShiny = encounter.isChromaticShiny,
+            orbUsedId = orbUsed.orbTypeId,
+            biomeZone = "Emerald Reserve Safari",
+            inActiveParty = goesToPartyDirectly,
+            capturedAtMs = nowMs
+        )
+        _optimisticEmeraldReserve.value = listOf(reserveEntry) + _optimisticEmeraldReserve.value.filter { it.id != reserveEntry.id }
+        if (isGoogleSignedIn) {
+            viewModelScope.launch {
+                repository.recordEmeraldReserveCapture(reserveEntry)
+            }
+        }
+
+        if (!goesToPartyDirectly) {
             _pendingTamedCreature.value = tamedCreature
             _statusBannerMessage.value =
-                "Tamed Wild ${spec.speciesName}! Your 4-Monster Squad is full (4/4) — choose a squad monster to swap/release."
+                "Captured ${if (encounter.isChromaticShiny) "✨ STARLIGHT CHROMATIC " else ""}${spec.speciesName} in a ${orbUsed.displayName}! Saved to your Emerald Reserve Vault — choose a party member to swap or keep in Reserve."
             return
         }
 
         addTamedCreatureToSquad(tamedCreature)
+    }
+
+    fun deployFromEmeraldReserve(entry: EmeraldReserveEntry) {
+        val currentSquad = uiState.value.creatures
+        val creatureFromVault = entry.toDigimonCreature()
+        if (currentSquad.any { it.id == entry.id || it.speciesId == entry.speciesId }) {
+            _statusBannerMessage.value = "${entry.nickname} is already in your active 4-Companion Party!"
+            return
+        }
+        if (currentSquad.size >= DigimonCatalog.MAX_SQUAD_SIZE) {
+            _pendingTamedCreature.value = creatureFromVault
+            _statusBannerMessage.value =
+                "Select which companion in your 4-Companion Party to swap with ${entry.nickname} from the Emerald Reserve Vault!"
+            return
+        }
+        addTamedCreatureToSquad(creatureFromVault)
+        _optimisticEmeraldReserve.value = _optimisticEmeraldReserve.value.map {
+            if (it.id == entry.id) it.copy(inActiveParty = true) else it
+        }
+        if (isGoogleSignedIn && entry.id.isNotBlank()) {
+            viewModelScope.launch {
+                repository.updateEmeraldReservePartyStatus(entry.id, inActiveParty = true)
+            }
+        }
     }
 
     private fun addTamedCreatureToSquad(tamedCreature: DigimonCreature) {

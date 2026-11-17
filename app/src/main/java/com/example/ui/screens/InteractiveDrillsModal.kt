@@ -28,6 +28,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
@@ -102,13 +103,14 @@ fun DrillsHubTab(
     val isInOfflineTraining = activeCreature?.isInOfflineTraining(nowMs) == true
     val isOfflineTrainingPaused = activeCreature?.isOfflineTrainingPaused() == true
     val hasOfflineTrainingSession = activeCreature?.hasOfflineTrainingSession(nowMs) == true
-    val canAffordDrill = digiCoins >= DigimonCatalog.TRAINING_DRILL_COIN_COST && !isRecoveringFrom1Hp && !hasOfflineTrainingSession
+    // Manual training is locked while actively in offline training, but unlocked if you PAUSE offline training!
+    val canAffordDrill = digiCoins >= DigimonCatalog.TRAINING_DRILL_COIN_COST && !isRecoveringFrom1Hp && !isInOfflineTraining
     val canAfford24hOffline = digiCoins >= DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST && !isRecoveringFrom1Hp && !hasOfflineTrainingSession
     val nextCoinMins = nextDigiCoinTickSec / 60
     val nextCoinSecs = nextDigiCoinTickSec % 60
     val timerFormatted = "%d:%02d".format(java.util.Locale.US, nextCoinMins, nextCoinSecs)
 
-    if (hasOfflineTrainingSession && activeDrill != null) {
+    if (isInOfflineTraining && activeDrill != null) {
         activeDrill = null
     }
 
@@ -120,7 +122,7 @@ fun DrillsHubTab(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         Text(
-            text = "INTERACTIVE HOLO-TRAINING DRILLS",
+            text = "AETHERLON DOME & STRIDEWALKER 24H STROLL",
             style = MaterialTheme.typography.headlineLarge,
             color = HoloCyanPrimary
         )
@@ -184,7 +186,7 @@ fun DrillsHubTab(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = "24-HOUR OFFLINE AUTO-TRAINING",
+                        text = "STRIDEWALKER 24-HOUR OFFLINE STROLL",
                         style = MaterialTheme.typography.titleMedium,
                         color = offlineCardColor
                     )
@@ -200,7 +202,7 @@ fun DrillsHubTab(
                                 isInOfflineTraining && activeCreature != null ->
                                     "ACTIVE • ${activeCreature.formattedOfflineTrainingRemaining(nowMs)} LEFT"
                                 else ->
-                                    "${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DIGICOINS / 24 HRS"
+                                    "${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} CREST COINS / 24 HRS"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = offlineCardColor,
@@ -212,11 +214,11 @@ fun DrillsHubTab(
                 Text(
                     text = when {
                         isOfflineTrainingPaused && activeCreature != null ->
-                            "⏸ Offline Auto-Training is PAUSED (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} remaining). The countdown timer is frozen and will not tick down until you restart offline training! Once in offline training, you cannot train normally."
+                            "⏸ StrideWalker 24h Stroll is PAUSED (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} frozen). While paused, the offline timer will not tick down AND you CAN manually train ${activeCreature.nickname} in the Aetherlon courses below! Tap Restart anytime to resume 24h StrideWalker Stroll."
                         isInOfflineTraining && activeCreature != null ->
-                            "✓ ${activeCreature.nickname} is in 24-Hour Offline Auto-Training (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} remaining)! Continues leveling (+2 ATK, +2 DEF, +2 SPD, +3 WIS & +4% Sync every 15m) even when the app is closed. Once in offline training, you cannot train normally — tap below to pause the timer anytime."
+                            "✓ ${activeCreature.nickname} is on a 24-Hour StrideWalker Offline Stroll (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} remaining)! Continues leveling (+2 ATK, +2 DEF, +2 SPD, +3 WIS & +4% Sync every 15m) even when the app is closed. While active, manual courses are locked — PAUSE StrideWalker below if you want to manually train!"
                         else ->
-                            "Train ${activeCreature?.nickname ?: "your monster"} automatically for 24 hours — even when the app is closed — for ${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DigiCoins! Once in offline training you cannot train normally, and you can pause & restart the 24h timer anytime."
+                            "Send ${activeCreature?.nickname ?: "your companion"} on a 24-hour StrideWalker route — even when the app is closed — for ${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} Crest Coins! While active you cannot train manually, or pause the 24h timer anytime to manually run Aetherlon courses."
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.White
@@ -250,13 +252,13 @@ fun DrillsHubTab(
                             isRecoveringFrom1Hp && activeCreature != null ->
                                 "RECOVERING FROM 1 HP (${activeCreature.formattedRecoveryRemaining(nowMs)} LEFT)"
                             isOfflineTrainingPaused && activeCreature != null ->
-                                "▶ RESTART OFFLINE TRAINING (RESUME ${activeCreature.formattedOfflineTrainingRemaining(nowMs)} TIMER)"
+                                "▶ RESTART STRIDEWALKER (RESUME ${activeCreature.formattedOfflineTrainingRemaining(nowMs)} TIMER)"
                             isInOfflineTraining && activeCreature != null ->
-                                "⏸ PAUSE OFFLINE TRAINING (FREEZE TIMER AT ${activeCreature.formattedOfflineTrainingRemaining(nowMs)})"
+                                "⏸ PAUSE STRIDEWALKER (FREEZE TIMER AT ${activeCreature.formattedOfflineTrainingRemaining(nowMs)})"
                             digiCoins >= DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST ->
-                                "START 24H OFFLINE TRAINING (${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DIGICOINS)"
+                                "START 24H STRIDEWALKER STROLL (${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} CREST COINS)"
                             else ->
-                                "NEED ${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DIGICOINS FOR 24H OFFLINE TRAINING ($digiCoins/${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST})"
+                                "NEED ${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} CREST COINS FOR 24H STRIDEWALKER ($digiCoins/${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST})"
                         },
                         style = MaterialTheme.typography.labelLarge,
                         textAlign = TextAlign.Center
@@ -289,7 +291,7 @@ fun DrillsHubTab(
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Text(
-                        text = "DIGICOINS: $digiCoins",
+                        text = "CREST COINS: $digiCoins",
                         style = MaterialTheme.typography.headlineMedium,
                         color = EvolutionGoldSecondary,
                         modifier = Modifier.testTag("drills_digicoin_balance_text")
@@ -308,15 +310,15 @@ fun DrillsHubTab(
                     }
                 }
                 Text(
-                    text = "Cost: ${DigimonCatalog.TRAINING_DRILL_COIN_COST} DigiCoins per Drill OR ${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} DigiCoins for 24h Offline Auto-Training.",
+                    text = "Cost: ${DigimonCatalog.TRAINING_DRILL_COIN_COST} Crest Coins per Aetherlon Course OR ${DigimonCatalog.OFFLINE_TRAINING_24H_COIN_COST} Crest Coins for 24h StrideWalker Stroll.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.White
                 )
                 Text(
                     text = if (activeCreature != null) {
-                        "Active: ${activeCreature.nickname} • LVL ${activeCreature.currentLevel()}/100 • Sync ${activeCreature.evolutionProgress}% • Level ONLY via Training & evolve at LVL 20+!"
+                        "Active: ${activeCreature.nickname} • LVL ${activeCreature.currentLevel()}/100 • Sync ${activeCreature.evolutionProgress}% • Level ONLY via Training & ascend at LVL 20+!"
                     } else {
-                        "Monsters level ONLY with Training Drills and can only evolve once reaching LVL 20+!"
+                        "Companions level ONLY with Aetherlon Courses and can only ascend once reaching LVL 20+!"
                     },
                     style = MaterialTheme.typography.labelMedium,
                     color = if (canAffordDrill) BioEmeraldHealth else SolarCoralHunger
@@ -324,7 +326,7 @@ fun DrillsHubTab(
             }
         }
 
-        if (activeDrill != null && activeCreature != null && !isRecoveringFrom1Hp && !hasOfflineTrainingSession) {
+        if (activeDrill != null && activeCreature != null && !isRecoveringFrom1Hp && !isInOfflineTraining) {
             InteractiveMiniDrillCard(
                 creature = activeCreature,
                 drillType = activeDrill!!,
@@ -421,14 +423,14 @@ fun DrillsHubTab(
                                 text = when {
                                     isRecoveringFrom1Hp && activeCreature != null ->
                                         "RECOVERING FROM 1 HP (${activeCreature.formattedRecoveryRemaining(nowMs)} LEFT)"
-                                    isOfflineTrainingPaused && activeCreature != null ->
-                                        "LOCKED — IN OFFLINE TRAINING (PAUSED • ${activeCreature.formattedOfflineTrainingRemaining(nowMs)} LEFT)"
                                     isInOfflineTraining && activeCreature != null ->
-                                        "LOCKED — CANNOT TRAIN NORMALLY IN OFFLINE TRAINING (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} LEFT)"
+                                        "LOCKED — PAUSE STRIDEWALKER ABOVE TO TRAIN MANUALLY (${activeCreature.formattedOfflineTrainingRemaining(nowMs)} LEFT)"
+                                    canAffordDrill && isOfflineTrainingPaused ->
+                                        "START MANUAL COURSE (${DigimonCatalog.TRAINING_DRILL_COIN_COST} COINS • STRIDEWALKER PAUSED)"
                                     canAffordDrill ->
-                                        "START TRAINING DRILL (${DigimonCatalog.TRAINING_DRILL_COIN_COST} DIGICOINS)"
+                                        "START AETHERLON COURSE (${DigimonCatalog.TRAINING_DRILL_COIN_COST} CREST COINS)"
                                     else ->
-                                        "NEED ${DigimonCatalog.TRAINING_DRILL_COIN_COST} DIGICOINS ($digiCoins/${DigimonCatalog.TRAINING_DRILL_COIN_COST} • +5 IN $timerFormatted)"
+                                        "NEED ${DigimonCatalog.TRAINING_DRILL_COIN_COST} CREST COINS ($digiCoins/${DigimonCatalog.TRAINING_DRILL_COIN_COST} • +5 IN $timerFormatted)"
                                 },
                                 style = MaterialTheme.typography.labelLarge,
                                 textAlign = TextAlign.Center
@@ -617,7 +619,7 @@ fun CyberFeedBottomSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
-                text = "FOOD BAG // FEED ${creature.nickname.uppercase()}",
+                text = "NECTAR POUCH // FEED ${creature.nickname.uppercase()}",
                 style = MaterialTheme.typography.headlineMedium,
                 color = SolarCoralHunger
             )
@@ -631,7 +633,7 @@ fun CyberFeedBottomSheet(
                     .height(132.dp)
             )
             Text(
-                text = "Satiety: ${creature.hunger}% • HP: ${creature.health}% • STA: ${creature.stamina}% • Food in Bag: $totalOwned (Must buy/claim food in the Store tab first to feed your pet!)",
+                text = "Satiety: ${creature.hunger}% • HP: ${creature.health}% • STA: ${creature.stamina}% • Delicacies in Pouch: $totalOwned (Claim or buy Nectar & Delicacies in the Bazaar tab first to feed your companion!)",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -652,7 +654,7 @@ fun CyberFeedBottomSheet(
                     .testTag("feed_sheet_go_to_store_button")
             ) {
                 Text(
-                    text = "GO TO STORE TAB TO BUY FOOD & TAMMING BERRIES",
+                    text = "OPEN SUNSPIRE BAZAAR FOR NECTAR & ACORN ORBS",
                     style = MaterialTheme.typography.labelLarge
                 )
             }
@@ -765,7 +767,7 @@ fun EvolutionMatrixBottomSheet(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text(
-                text = "BRANCHING DIGIVOLUTION MATRIX",
+                text = "CREST EVOLUTION LINEAGE MATRIX",
                 style = MaterialTheme.typography.headlineLarge,
                 color = EvolutionGoldSecondary
             )
@@ -1074,278 +1076,289 @@ fun StarterTrioDraftContent(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        // Sticky Header + Quick Continue Bar at Top
-        Card(
-            shape = RoundedCornerShape(16.dp),
-            colors = CardDefaults.cardColors(containerColor = HoloCardElevated),
-            border = BorderStroke(1.dp, HoloCyanPrimary.copy(alpha = 0.5f)),
+        // 1. Compact Sticky Header Bar at Top (Fits cleanly on small mobile screens)
+        Surface(
+            color = HoloCardElevated,
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, HoloCyanPrimary.copy(alpha = 0.55f)),
             modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = "CHOOSE 1 OF 10 ROOKIE STARTERS",
-                            style = MaterialTheme.typography.headlineMedium,
-                            color = HoloCyanPrimary
-                        )
-                        Text(
-                            text = "10 ROOKIE CHOICES • UNIQUE STATS & ABILITIES • 200 DIGICOINS (NEW GAME)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = BioEmeraldHealth
-                        )
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = submitDraft,
-                        enabled = chosenSpec.stage == "Rookie",
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = HoloCyanPrimary,
-                            contentColor = CyberVoidBg
-                        ),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier
-                            .heightIn(min = 42.dp)
-                            .testTag("top_confirm_three_starters_button")
-                    ) {
-                        Text(
-                            text = "CONTINUE ➔",
-                            style = MaterialTheme.typography.labelLarge
-                        )
-                    }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "SYLVAN SANCTUARY: PICK 1 OF 10 STARTERS",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = HoloCyanPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "10 Unique Stats & Abilities • +200 Crest Coins (New Game)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = BioEmeraldHealth,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
                 }
-                Text(
-                    text = "New Player Guide: Pick 1 of the 10 Rookie Digital Monsters below! Each starter has distinct ATK/DEF/SPD/WIS stats, a Signature Move, and a unique Passive Ability. You start a New Game with 200 DigiCoins and evolve at LVL 20+!",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = EvolutionGoldSecondary
-                )
-
-                // Stage Gate Indicator Strip showing Rookie Allowed vs Locked Higher Stages
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                Spacer(modifier = Modifier.width(6.dp))
+                Button(
+                    onClick = submitDraft,
+                    enabled = chosenSpec.stage == "Rookie",
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = HoloCyanPrimary,
+                        contentColor = CyberVoidBg
+                    ),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier
+                        .heightIn(min = 36.dp)
+                        .testTag("top_confirm_three_starters_button")
                 ) {
-                    Surface(
-                        color = BioEmeraldHealth.copy(alpha = 0.22f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, BioEmeraldHealth),
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable { stageLockNotice = null }
-                    ) {
-                        Text(
-                            text = "✓ ROOKIE (10)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = BioEmeraldHealth,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(vertical = 5.dp, horizontal = 4.dp)
-                        )
-                    }
-                    listOf("CHAMPION", "ULTIMATE", "MEGA").forEach { lockedStage ->
-                        Surface(
-                            color = VirusCrimsonError.copy(alpha = 0.14f),
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, VirusCrimsonError.copy(alpha = 0.55f)),
-                            modifier = Modifier
-                                .weight(1f)
-                                .clickable {
-                                    stageLockNotice =
-                                        "LOCKED: You can ONLY choose a Rookie monster for your starter! $lockedStage monsters must be evolved from a Rookie."
-                                }
-                        ) {
-                            Text(
-                                text = "🔒 $lockedStage",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = VirusCrimsonError,
-                                textAlign = TextAlign.Center,
-                                maxLines = 1,
-                                modifier = Modifier.padding(vertical = 5.dp, horizontal = 2.dp)
-                            )
-                        }
-                    }
-                }
-
-                if (stageLockNotice != null) {
-                    Surface(
-                        color = VirusCrimsonError.copy(alpha = 0.18f),
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, VirusCrimsonError)
-                    ) {
-                        Text(
-                            text = stageLockNotice.orEmpty(),
-                            style = MaterialTheme.typography.labelSmall,
-                            color = Color.White,
-                            modifier = Modifier.padding(8.dp)
-                        )
-                    }
-                }
-
-                // Selected Digital Monster Live Spotlight Preview (Stats + Unique Ability)
-                val chosenAccent = Color(chosenSpec.primaryColorHex)
-                Surface(
-                    color = HoloSlateSurface,
-                    shape = RoundedCornerShape(12.dp),
-                    border = BorderStroke(1.5.dp, chosenAccent),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        DigimonHoloCrestAvatar(
-                            speciesId = chosenSpec.speciesId,
-                            stage = "Rookie",
-                            isResting = false,
-                            evolutionReady = true,
-                            sizeDp = 56.dp
-                        )
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Text(
-                                text = "SELECTED: ${chosenSpec.speciesName.uppercase()} (${chosenSpec.attribute.uppercase()} ROOKIE)",
-                                style = MaterialTheme.typography.titleSmall,
-                                color = Color.White
-                            )
-                            Text(
-                                text = "ATK ${chosenSpec.baseAttack} • DEF ${chosenSpec.baseDefense} • SPD ${chosenSpec.baseSpeed} • WIS ${chosenSpec.baseWisdom} • Move: ${chosenSpec.signatureMove}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = HoloCyanPrimary
-                            )
-                            Text(
-                                text = "⚡ ABILITY — ${chosenSpec.resolvedAbilityName()}: ${chosenSpec.resolvedAbilityDescription()}",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = EvolutionGoldSecondary
-                            )
-                        }
-                    }
+                    Text(
+                        text = "START ➔",
+                        style = MaterialTheme.typography.labelLarge
+                    )
                 }
             }
         }
 
-        // Scrollable 10 Rookie Starter Cards & Nickname
+        // 2. Unified Scrollable Body (Spotlight + Stage Pills + 2-Column 10-Starter Grid + Nickname)
         Column(
             modifier = Modifier
-                .weight(1f, fill = false)
+                .weight(1f, fill = true)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            rookieStarterSpecs.forEachIndexed { idx, spec ->
-                val isSelected = spec.speciesId == chosenSpec.speciesId
-                val accent = Color(spec.primaryColorHex)
-
-                Card(
+            // Compact Selected Digital Monster Spotlight Preview (Stats + Unique Ability)
+            val chosenAccent = Color(chosenSpec.primaryColorHex)
+            Surface(
+                color = HoloSlateSurface,
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.5.dp, chosenAccent),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable {
-                            if (spec.stage == "Rookie" && !spec.isRareLevel100Spec) {
-                                selectedSpeciesId = spec.speciesId
-                                stageLockNotice = null
-                            }
-                        }
-                        .testTag("starter_draft_card_${spec.speciesId}"),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (isSelected) accent.copy(alpha = 0.20f) else HoloCardElevated
-                    ),
-                    border = BorderStroke(
-                        if (isSelected) 2.dp else 1.dp,
-                        if (isSelected) accent else accent.copy(alpha = 0.45f)
-                    )
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    DigimonHoloCrestAvatar(
+                        speciesId = chosenSpec.speciesId,
+                        stage = "Rookie",
+                        isResting = false,
+                        evolutionReady = true,
+                        sizeDp = 44.dp
+                    )
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
                     ) {
-                        DigimonHoloCrestAvatar(
-                            speciesId = spec.speciesId,
-                            stage = "Rookie",
-                            isResting = false,
-                            evolutionReady = isSelected,
-                            sizeDp = 52.dp
+                        Text(
+                            text = "SELECTED: ${chosenSpec.speciesName.uppercase()} (${chosenSpec.attribute.uppercase()} ROOKIE)",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Column(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(3.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "#${idx + 1} ${spec.speciesName} — ROOKIE (LVL 1)",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = Color.White,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Surface(
-                                    color = if (isSelected) accent else BioEmeraldHealth.copy(alpha = 0.18f),
-                                    shape = RoundedCornerShape(50)
-                                ) {
-                                    Text(
-                                        text = if (isSelected) "SELECTED" else spec.attribute.uppercase(),
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = if (isSelected) CyberVoidBg else BioEmeraldHealth,
-                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp)
-                                    )
-                                }
-                            }
-                            Text(
-                                text = "ATK ${spec.baseAttack} • DEF ${spec.baseDefense} • SPD ${spec.baseSpeed} • WIS ${spec.baseWisdom} • Move: ${spec.signatureMove}",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = HoloCyanPrimary
-                            )
-                            Surface(
-                                color = EvolutionGoldSecondary.copy(alpha = 0.14f),
-                                shape = RoundedCornerShape(8.dp),
-                                border = BorderStroke(1.dp, EvolutionGoldSecondary.copy(alpha = 0.45f))
-                            ) {
-                                Text(
-                                    text = "⚡ Ability: ${spec.resolvedAbilityName()} — ${spec.resolvedAbilityDescription()}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = EvolutionGoldSecondary,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
+                        Text(
+                            text = "ATK ${chosenSpec.baseAttack} • DEF ${chosenSpec.baseDefense} • SPD ${chosenSpec.baseSpeed} • WIS ${chosenSpec.baseWisdom} • ${chosenSpec.signatureMove}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = HoloCyanPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = "⚡ ${chosenSpec.resolvedAbilityName()}: ${chosenSpec.resolvedAbilityDescription()}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = EvolutionGoldSecondary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
             }
 
-            Text(
-                text = "OPTIONAL NICKNAME FOR YOUR ROOKIE STARTER (${chosenSpec.speciesName.uppercase()})",
-                style = MaterialTheme.typography.labelLarge,
-                color = HoloCyanPrimary
-            )
+            // Compact Stage Gate Strip (Rookie Allowed vs Locked Stages)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Surface(
+                    color = BioEmeraldHealth.copy(alpha = 0.22f),
+                    shape = RoundedCornerShape(6.dp),
+                    border = BorderStroke(1.dp, BioEmeraldHealth),
+                    modifier = Modifier
+                        .weight(1.15f)
+                        .clickable { stageLockNotice = null }
+                ) {
+                    Text(
+                        text = "✓ ROOKIE (10)",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = BioEmeraldHealth,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        modifier = Modifier.padding(vertical = 4.dp, horizontal = 2.dp)
+                    )
+                }
+                listOf("CHAMP", "ULT", "MEGA").forEach { lockedStage ->
+                    Surface(
+                        color = VirusCrimsonError.copy(alpha = 0.14f),
+                        shape = RoundedCornerShape(6.dp),
+                        border = BorderStroke(1.dp, VirusCrimsonError.copy(alpha = 0.55f)),
+                        modifier = Modifier
+                            .weight(0.95f)
+                            .clickable {
+                                stageLockNotice =
+                                    "LOCKED: Only Rookie monsters can be chosen as your starter! Evolve at LVL 20+."
+                            }
+                    ) {
+                        Text(
+                            text = "🔒 $lockedStage",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = VirusCrimsonError,
+                            textAlign = TextAlign.Center,
+                            maxLines = 1,
+                            modifier = Modifier.padding(vertical = 4.dp, horizontal = 2.dp)
+                        )
+                    }
+                }
+            }
+
+            if (stageLockNotice != null) {
+                Surface(
+                    color = VirusCrimsonError.copy(alpha = 0.18f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, VirusCrimsonError),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stageLockNotice.orEmpty(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        modifier = Modifier.padding(6.dp)
+                    )
+                }
+            }
+
+            // 2-Column Responsive Grid of All 10 Rookie Starters (5 compact rows on mobile)
+            val pairedRows = remember(rookieStarterSpecs) { rookieStarterSpecs.chunked(2) }
+            pairedRows.forEachIndexed { rowIndex, rowSpecs ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    rowSpecs.forEachIndexed { colIndex, spec ->
+                        val itemNumber = rowIndex * 2 + colIndex + 1
+                        val isSelected = spec.speciesId == chosenSpec.speciesId
+                        val accent = Color(spec.primaryColorHex)
+
+                        Card(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    if (spec.stage == "Rookie" && !spec.isRareLevel100Spec) {
+                                        selectedSpeciesId = spec.speciesId
+                                        stageLockNotice = null
+                                    }
+                                }
+                                .testTag("starter_draft_card_${spec.speciesId}"),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isSelected) accent.copy(alpha = 0.22f) else HoloCardElevated
+                            ),
+                            border = BorderStroke(
+                                if (isSelected) 2.dp else 1.dp,
+                                if (isSelected) accent else accent.copy(alpha = 0.45f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    DigimonHoloCrestAvatar(
+                                        speciesId = spec.speciesId,
+                                        stage = "Rookie",
+                                        isResting = false,
+                                        evolutionReady = isSelected,
+                                        sizeDp = 36.dp
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "#$itemNumber ${spec.speciesName}",
+                                            style = MaterialTheme.typography.labelLarge,
+                                            color = Color.White,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = if (isSelected) "✓ SELECTED" else "${spec.attribute} • LVL 1",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (isSelected) BioEmeraldHealth else accent,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    }
+                                }
+                                Text(
+                                    text = "ATK ${spec.baseAttack} • DEF ${spec.baseDefense} • SPD ${spec.baseSpeed} • WIS ${spec.baseWisdom}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = HoloCyanPrimary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Surface(
+                                    color = EvolutionGoldSecondary.copy(alpha = 0.14f),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = BorderStroke(1.dp, EvolutionGoldSecondary.copy(alpha = 0.4f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = "⚡ ${spec.resolvedAbilityName()}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = EvolutionGoldSecondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    if (rowSpecs.size == 1) {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+
+            // Compact Optional Nickname Field inside Scrollable Area
             OutlinedTextField(
                 value = customNickname,
                 onValueChange = { customNickname = it },
-                label = { Text("Starter Nickname (Default: ${chosenSpec.speciesName})") },
+                label = { Text("Optional Nickname (Default: ${chosenSpec.speciesName})") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()
             )
         }
 
-        // Always-Visible Sticky Bottom Continue Button
+        // 3. Always-Visible Compact Sticky Bottom Continue Button
         Button(
             onClick = submitDraft,
             enabled = chosenSpec.stage == "Rookie",
@@ -1353,17 +1366,19 @@ fun StarterTrioDraftContent(
                 containerColor = HoloCyanPrimary,
                 contentColor = CyberVoidBg
             ),
-            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 10.dp),
-            shape = RoundedCornerShape(14.dp),
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(12.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 50.dp)
+                .heightIn(min = 44.dp)
                 .testTag("confirm_three_starters_button")
         ) {
             Text(
-                text = "START NEW GAME WITH ROOKIE ${chosenSpec.speciesName.uppercase()} & 200 DIGICOINS ➔",
-                style = MaterialTheme.typography.titleMedium,
-                textAlign = TextAlign.Center
+                text = "START GAME: ${chosenSpec.speciesName.uppercase()} + 200 CREST COINS ➔",
+                style = MaterialTheme.typography.labelLarge,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }

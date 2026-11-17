@@ -2,7 +2,7 @@
   "entities": {
     "DigimonCreature": {
       "title": "DigimonCreature",
-      "description": "An individual Digimon partner raised and trained by a user, with real-time health, stamina, hunger, and evolution progress telemetry.",
+      "description": "An individual companion partner raised and trained by a user, with real-time health, stamina, hunger, and evolution progress telemetry.",
       "type": "object",
       "properties": {
         "userId": {
@@ -11,25 +11,25 @@
         },
         "nickname": {
           "type": "string",
-          "description": "Custom nickname of the Digimon partner."
+          "description": "Custom nickname of the companion partner."
         },
         "speciesId": {
           "type": "string",
-          "description": "Identifier for the current Digimon species form (e.g., agumon, greymon, wargreymon, omegamon_x)."
+          "description": "Identifier for the current species form."
         },
         "speciesName": {
           "type": "string",
-          "description": "Display name of the current Digimon species."
+          "description": "Display name of the current species."
         },
         "stage": {
           "type": "string",
           "enum": ["Rookie", "Champion", "Ultimate", "Mega"],
-          "description": "Current Digivolution stage."
+          "description": "Current evolution stage."
         },
         "attribute": {
           "type": "string",
           "enum": ["Vaccine", "Data", "Virus", "Free"],
-          "description": "Elemental attribute of the Digimon."
+          "description": "Persisted elemental archetype category."
         },
         "health": {
           "type": "integer",
@@ -45,7 +45,7 @@
         },
         "evolutionProgress": {
           "type": "integer",
-          "description": "Digivolution sync progress percentage from 0 to 100."
+          "description": "Evolution sync progress percentage from 0 to 100."
         },
         "attack": {
           "type": "integer",
@@ -61,7 +61,7 @@
         },
         "wisdom": {
           "type": "integer",
-          "description": "Tactical intelligence and cipher stat."
+          "description": "Tactical intelligence and special stat."
         },
         "bondLevel": {
           "type": "integer",
@@ -77,7 +77,7 @@
         },
         "unlockedForms": {
           "type": "array",
-          "description": "Bounded list of speciesIds unlocked in this creature's lineage (max 15)."
+          "description": "Bounded list of speciesIds and compact RPG metadata tags unlocked in this creature's lineage (max 15)."
         },
         "lastUpdatedMs": {
           "type": "integer",
@@ -86,7 +86,7 @@
         "createdAt": {
           "type": "string",
           "format": "date-time",
-          "description": "Server timestamp when creature was hatched. Clients must submit FieldValue.serverTimestamp()."
+          "description": "Server timestamp when creature was created. Clients must submit FieldValue.serverTimestamp()."
         },
         "updatedAt": {
           "type": "string",
@@ -118,9 +118,209 @@
         "updatedAt"
       ]
     },
+    "AcornOrbInventory": {
+      "title": "AcornOrbInventory",
+      "description": "Offline-cached Firestore inventory document for a specific handcrafted Acorn Orb variety and wild foraging materials owned by a trainer.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the owning trainer."
+        },
+        "orbTypeId": {
+          "type": "string",
+          "enum": [
+            "standard_acorn_orb",
+            "crimson_fast_orb",
+            "cobalt_lure_orb",
+            "aureate_heavy_orb",
+            "verdant_friend_orb",
+            "lunar_moon_orb"
+          ],
+          "description": "Unique identifier of the Acorn Orb type."
+        },
+        "orbDisplayName": {
+          "type": "string",
+          "description": "Display name of the handcrafted Acorn Orb."
+        },
+        "quantity": {
+          "type": "integer",
+          "description": "Current quantity of this Acorn Orb variety in the trainer's pouch (0 to 9999)."
+        },
+        "captureBonusPercent": {
+          "type": "integer",
+          "description": "Bonus wild capture rate percentage granted by this Acorn Orb variety (0 to 50)."
+        },
+        "gildedAcornCount": {
+          "type": "integer",
+          "description": "Count of standard Gilded Acorns foraged from wild encounters (0 to 9999)."
+        },
+        "relicShardCount": {
+          "type": "integer",
+          "description": "Count of rare Relic Shards foraged from apex wild encounters (0 to 9999)."
+        },
+        "lastSyncedMs": {
+          "type": "integer",
+          "description": "Client epoch milliseconds of the latest offline/online inventory mutation."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when this Acorn Orb inventory record was initialized. Clients must submit FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when this Acorn Orb inventory record was last updated. Clients must submit FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "orbTypeId",
+        "orbDisplayName",
+        "quantity",
+        "captureBonusPercent",
+        "gildedAcornCount",
+        "relicShardCount",
+        "lastSyncedMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "EmeraldReserveEntry": {
+      "title": "EmeraldReserveEntry",
+      "description": "A wild companion captured in the Emerald Reserve Safari and stored in the trainer's offline-cached collection inventory.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "UID of the owning trainer."
+        },
+        "speciesId": {
+          "type": "string",
+          "description": "Catalog species identifier of the captured companion."
+        },
+        "speciesName": {
+          "type": "string",
+          "description": "Display species name of the captured companion."
+        },
+        "nickname": {
+          "type": "string",
+          "description": "Custom or default nickname of the captured companion."
+        },
+        "stage": {
+          "type": "string",
+          "enum": ["Rookie", "Champion", "Ultimate", "Mega"],
+          "description": "Evolution stage at capture or current progression."
+        },
+        "elementAttribute": {
+          "type": "string",
+          "description": "Elemental type of the companion (e.g., Pyro, Aqua, Flora, Storm, Terra, Gale, Astral, Shadow, Metal, Aether)."
+        },
+        "rarityTier": {
+          "type": "string",
+          "enum": ["COMMON", "UNCOMMON", "RARE", "ULTRA_RARE", "LEGENDARY_APEX"],
+          "description": "Wild encounter rarity tier at the time of capture."
+        },
+        "capturedLevel": {
+          "type": "integer",
+          "description": "Companion level (1 to 100)."
+        },
+        "attack": {
+          "type": "integer",
+          "description": "Attack stat of the captured companion."
+        },
+        "defense": {
+          "type": "integer",
+          "description": "Defense stat of the captured companion."
+        },
+        "speed": {
+          "type": "integer",
+          "description": "Speed stat of the captured companion."
+        },
+        "wisdom": {
+          "type": "integer",
+          "description": "Wisdom stat of the captured companion."
+        },
+        "bondLevel": {
+          "type": "integer",
+          "description": "Bond level (0 to 100) of the captured companion."
+        },
+        "natureCode": {
+          "type": "string",
+          "description": "Nature code affecting +15%/-10% stat growth."
+        },
+        "heldRelicCode": {
+          "type": "string",
+          "description": "Equipped Held Relic item code."
+        },
+        "chromaticShiny": {
+          "type": "boolean",
+          "description": "Whether this companion is a 1-in-20 Starlight Chromatic variant."
+        },
+        "orbUsedId": {
+          "type": "string",
+          "enum": [
+            "standard_acorn_orb",
+            "crimson_fast_orb",
+            "cobalt_lure_orb",
+            "aureate_heavy_orb",
+            "verdant_friend_orb",
+            "lunar_moon_orb"
+          ],
+          "description": "Identifier of the Acorn Orb variety used to capture this companion."
+        },
+        "biomeZone": {
+          "type": "string",
+          "description": "Emerald Reserve biome zone where the companion was captured."
+        },
+        "inActiveParty": {
+          "type": "boolean",
+          "description": "Whether the companion is currently deployed in the 4-companion active squad."
+        },
+        "capturedAtMs": {
+          "type": "integer",
+          "description": "Client epoch milliseconds when the wild capture occurred (supports offline capture ordering)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the capture record was created. Clients must submit FieldValue.serverTimestamp()."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the capture record was last updated. Clients must submit FieldValue.serverTimestamp()."
+        }
+      },
+      "required": [
+        "userId",
+        "speciesId",
+        "speciesName",
+        "nickname",
+        "stage",
+        "elementAttribute",
+        "rarityTier",
+        "capturedLevel",
+        "attack",
+        "defense",
+        "speed",
+        "wisdom",
+        "bondLevel",
+        "natureCode",
+        "heldRelicCode",
+        "chromaticShiny",
+        "orbUsedId",
+        "biomeZone",
+        "inActiveParty",
+        "capturedAtMs",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
     "TrainingLogEntry": {
       "title": "TrainingLogEntry",
-      "description": "A chronological daily training or care log entry recorded for a trainer's Digimon.",
+      "description": "A chronological daily training or care log entry recorded for a trainer's companion.",
       "type": "object",
       "properties": {
         "userId": {
@@ -129,11 +329,11 @@
         },
         "creatureId": {
           "type": "string",
-          "description": "Document ID of the Digimon creature."
+          "description": "Document ID of the creature."
         },
         "creatureName": {
           "type": "string",
-          "description": "Name of the Digimon at the time of training."
+          "description": "Name of the creature at the time of training."
         },
         "activityType": {
           "type": "string",
@@ -147,7 +347,7 @@
         },
         "statDeltaSummary": {
           "type": "string",
-          "description": "Human-readable telemetry delta summary (e.g., '+12 ATK, +15% EVO, -15 STA')."
+          "description": "Human-readable telemetry delta summary."
         },
         "xpGained": {
           "type": "integer",
@@ -177,7 +377,7 @@
     },
     "PetNotification": {
       "title": "PetNotification",
-      "description": "A real-time status alert generated for a trainer's Digimon (hunger, stamina, health, evolution, or trade).",
+      "description": "A real-time status alert generated for a trainer's companion.",
       "type": "object",
       "properties": {
         "userId": {
@@ -256,17 +456,17 @@
         },
         "partnerName": {
           "type": "string",
-          "description": "Lead Digimon partner's species/nickname."
+          "description": "Lead companion partner's species/nickname."
         },
         "partnerStage": {
           "type": "string",
           "enum": ["Rookie", "Champion", "Ultimate", "Mega"],
-          "description": "Evolution stage of the lead Digimon."
+          "description": "Evolution stage of the lead companion."
         },
         "partnerAttribute": {
           "type": "string",
           "enum": ["Vaccine", "Data", "Virus", "Free"],
-          "description": "Attribute of the lead Digimon."
+          "description": "Attribute of the lead companion."
         },
         "totalCombatPower": {
           "type": "integer",
@@ -274,7 +474,7 @@
         },
         "evolutionsUnlocked": {
           "type": "integer",
-          "description": "Total number of Digivolution forms unlocked."
+          "description": "Total number of evolution forms unlocked."
         },
         "trainingStreakDays": {
           "type": "integer",
@@ -502,7 +702,7 @@
         },
         "senderPartnerName": {
           "type": "string",
-          "description": "Active Digimon partner name of the sender."
+          "description": "Active companion partner name of the sender."
         },
         "senderPartnerStage": {
           "type": "string",
@@ -553,7 +753,7 @@
         },
         "requesterPartnerName": {
           "type": "string",
-          "description": "Lead Digimon partner of the requester."
+          "description": "Lead companion partner of the requester."
         },
         "recipientUserId": {
           "type": "string",
@@ -565,7 +765,7 @@
         },
         "recipientPartnerName": {
           "type": "string",
-          "description": "Lead Digimon partner of the recipient."
+          "description": "Lead companion partner of the recipient."
         },
         "status": {
           "type": "string",
@@ -599,7 +799,15 @@
   "firestore": {
     "/users/{userId}/creatures/{creatureId}": {
       "schema": { "$ref": "#/entities/DigimonCreature" },
-      "description": "User-scoped Digimon squad creatures and real-time telemetry."
+      "description": "User-scoped active squad creatures and real-time telemetry."
+    },
+    "/users/{userId}/acornOrbs/{orbTypeId}": {
+      "schema": { "$ref": "#/entities/AcornOrbInventory" },
+      "description": "User-scoped offline-cached Acorn Orb pouch and wild foraging material counts."
+    },
+    "/users/{userId}/emeraldReserve/{entryId}": {
+      "schema": { "$ref": "#/entities/EmeraldReserveEntry" },
+      "description": "User-scoped offline-cached Emerald Reserve wild collection and sanctuary vault inventory."
     },
     "/users/{userId}/trainingLogs/{logId}": {
       "schema": { "$ref": "#/entities/TrainingLogEntry" },

@@ -55,6 +55,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -105,6 +106,8 @@ fun CommandDeckTab(
     onOpenEvolutionMatrix: () -> Unit,
     onTriggerEvolution: (EvolutionBranchRequirement) -> Unit = {},
     onUnlockSkillNode: (com.example.data.model.MonsterSkillNode) -> Unit = {},
+    onChangeNature: (com.example.data.model.CompanionNature) -> Unit = {},
+    onEquipRelic: (com.example.data.model.HeldRelicItem) -> Unit = {},
     onOpenDrillsModal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -206,11 +209,13 @@ fun CommandDeckTab(
                         onOpenEvolutionMatrix = onOpenEvolutionMatrix,
                         onOpenWildTamingModal = onOpenWildTamingModal,
                         onOpenExpeditionsModal = onOpenExpeditionsModal,
-                        onOpenSkillTreeModal = { selectedDeckSubTab = 2 }
+                        onOpenSkillTreeModal = { selectedDeckSubTab = 2 },
+                        onChangeNature = onChangeNature,
+                        onEquipRelic = onEquipRelic
                     )
 
                     Text(
-                        text = "REAL-TIME BIOMETRIC & EVOLUTION TELEMETRY",
+                        text = "CHRONOGEAR BIOMETRIC & CREST TELEMETRY",
                         style = MaterialTheme.typography.labelLarge,
                         color = HoloCyanPrimary
                     )
@@ -381,13 +386,13 @@ private fun SquadSwitcherRow(
         ) {
             Icon(
                 imageVector = Icons.Default.AddCircleOutline,
-                contentDescription = "Tame Wild Monsters",
+                contentDescription = "Emerald Reserve Safari",
                 tint = BioEmeraldHealth,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "TAME WILD (2c)",
+                text = "SAFARI ORBS (2c)",
                 style = MaterialTheme.typography.labelLarge,
                 color = BioEmeraldHealth
             )
@@ -403,13 +408,13 @@ private fun SquadSwitcherRow(
         ) {
             Icon(
                 imageVector = Icons.Default.Bolt,
-                contentDescription = "10 Expeditions",
+                contentDescription = "16 Sanctum Crests",
                 tint = HoloCyanPrimary,
                 modifier = Modifier.size(18.dp)
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
-                text = "10 EXPEDITIONS",
+                text = "16 CREST ROUTES",
                 style = MaterialTheme.typography.labelLarge,
                 color = HoloCyanPrimary
             )
@@ -474,7 +479,9 @@ private fun ActivePartnerHoloStageCard(
     onOpenEvolutionMatrix: () -> Unit,
     onOpenWildTamingModal: () -> Unit = {},
     onOpenExpeditionsModal: () -> Unit = {},
-    onOpenSkillTreeModal: () -> Unit = {}
+    onOpenSkillTreeModal: () -> Unit = {},
+    onChangeNature: (com.example.data.model.CompanionNature) -> Unit = {},
+    onEquipRelic: (com.example.data.model.HeldRelicItem) -> Unit = {}
 ) {
     val spec = DigimonCatalog.getSpec(creature.speciesId)
     val accent = Color(spec.primaryColorHex)
@@ -566,6 +573,16 @@ private fun ActivePartnerHoloStageCard(
                         text = "♥ $liveBpm BPM",
                         color = BioEmeraldHealth
                     )
+                    if (creature.isChromaticShiny()) {
+                        HoloTagBadge(
+                            text = "✨ CHROMATIC (+15%)",
+                            color = EvolutionGoldSecondary
+                        )
+                    }
+                    HoloTagBadge(
+                        text = "🏅 ${creature.earnedSanctumBadgesCount()}/16 BADGES",
+                        color = EvolutionGoldSecondary
+                    )
                 }
 
                 // Bottom Signature Skill & Species Overlay on the Monster Showcase
@@ -577,7 +594,7 @@ private fun ActivePartnerHoloStageCard(
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     Text(
-                        text = "ACTIVE PARTNER SCAN // ${creature.speciesName.uppercase()} (${currentActionState.label})",
+                        text = "WALKING COMPANION STAGE // ${creature.speciesName.uppercase()} (${currentActionState.label})",
                         style = MaterialTheme.typography.labelMedium,
                         color = HoloCyanPrimary
                     )
@@ -603,7 +620,7 @@ private fun ActivePartnerHoloStageCard(
                 }
             }
 
-            // Interactive Monster Action Animation Switcher Bar (Idle / Sleeping / Eating / Training)
+            // Interactive Walking Companion Action Switcher Bar (Stroll / Rest / Nectar / Dome)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -633,10 +650,10 @@ private fun ActivePartnerHoloStageCard(
                     ) {
                         Text(
                             text = when (stateMode) {
-                                MonsterActionState.IDLE -> "SCAN"
-                                MonsterActionState.SLEEPING -> "SLEEP Zzz"
-                                MonsterActionState.EATING -> "EAT ♥"
-                                MonsterActionState.TRAINING -> "TRAIN ⚡"
+                                MonsterActionState.IDLE -> "STROLL"
+                                MonsterActionState.SLEEPING -> "REST Zzz"
+                                MonsterActionState.EATING -> "NECTAR ♥"
+                                MonsterActionState.TRAINING -> "DOME ⚡"
                             },
                             style = MaterialTheme.typography.labelSmall,
                             color = if (selected) modeColor else Color.White,
@@ -646,6 +663,62 @@ private fun ActivePartnerHoloStageCard(
                         )
                     }
                 }
+            }
+
+            // ChronoGear Radio Tuner Strip (4 Live Aurelia & Argentia Frequencies)
+            var selectedRadioChannel by rememberSaveable { mutableStateOf(0) }
+            val radioChannels = remember(creature.speciesName, creature.attribute) {
+                listOf(
+                    Triple("FM 101.5 • SYLVAN TALK", "Prof. Sylvan: ${creature.speciesName} (${creature.attribute}) thrives on Aetherlon drills & high Bond!", HoloCyanPrimary),
+                    Triple("FM 104.2 • STARLIGHT CODE", "Starlight Password Active: Claim your Daily Login in the Bazaar for Crest Coins or Acorn Orbs!", EvolutionGoldSecondary),
+                    Triple("FM 106.8 • SLUMBER FLUTE", " soothing Slumber Flute melody calming ${creature.nickname}'s heart rate & Sanctuary Rest...", PlasmaVioletStamina),
+                    Triple("FM 109.9 • VANGUARD MARCH", "Upbeat Vanguard March! Emerald Reserve Safari & 16-Crest Expeditions are live in the World tab.", BioEmeraldHealth)
+                )
+            }
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(CyberVoidBg.copy(alpha = 0.92f))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+                    .testTag("chronogear_radio_tuner_bar"),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    radioChannels.forEachIndexed { idx, (label, _, chColor) ->
+                        val isTuned = selectedRadioChannel == idx
+                        Surface(
+                            color = if (isTuned) chColor.copy(alpha = 0.24f) else HoloSlateSurface,
+                            shape = RoundedCornerShape(6.dp),
+                            border = BorderStroke(1.dp, if (isTuned) chColor else chColor.copy(alpha = 0.35f)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable { selectedRadioChannel = idx }
+                                .testTag("radio_channel_$idx")
+                        ) {
+                            Text(
+                                text = label.substringAfter("• "),
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isTuned) chColor else Color.White,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(vertical = 4.dp, horizontal = 2.dp)
+                            )
+                        }
+                    }
+                }
+                val activeStation = radioChannels[selectedRadioChannel]
+                Text(
+                    text = "📻 ${activeStation.first}: ${activeStation.second}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = activeStation.third,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
 
             // Lower Control & Holo-Avatar Telemetry Deck
@@ -685,7 +758,7 @@ private fun ActivePartnerHoloStageCard(
                             color = EvolutionGoldSecondary
                         )
                         Text(
-                            text = "DIGICOINS: $digiCoins (10 Coins/Drill • +5 in $coinTimerText)",
+                            text = "CREST COINS: $digiCoins (10 Coins/Course • +5 in $coinTimerText)",
                             style = MaterialTheme.typography.labelLarge,
                             color = HoloCyanPrimary
                         )
@@ -699,7 +772,7 @@ private fun ActivePartnerHoloStageCard(
                     }
                 }
 
-                // Row 2: Full-width Evolution, 24h Offline Training & 1 HP Recovery Status Banner
+                // Row 2: Full-width Evolution, 24h StrideWalker & 1 HP Recovery Status Banner
                 val nowMs = System.currentTimeMillis()
                 val isRecovering1Hp = creature.isRecoveringFrom1Hp(nowMs)
                 val isOfflineTraining = creature.isInOfflineTraining(nowMs)
@@ -724,23 +797,23 @@ private fun ActivePartnerHoloStageCard(
                             isRecovering1Hp ->
                                 "⚠️ 1 HP RECOVERY LOCKOUT (${creature.formattedRecoveryRemaining(nowMs)} LEFT): ${creature.nickname} reached 1 HP in wild battle & must recover for 5 mins before doing anything!"
                             isOfflineTraining ->
-                                "⚡ 24H OFFLINE TRAINING ACTIVE (${creature.formattedOfflineTrainingRemaining(nowMs)} LEFT) • Normal Drills Locked • Open DRILLS tab to Pause!"
+                                "⚡ STRIDEWALKER 24H STROLL ACTIVE (${creature.formattedOfflineTrainingRemaining(nowMs)} LEFT) • Pause in DOME tab to train manually!"
                             isOfflineTrainingPaused ->
-                                "⏸ 24H OFFLINE TRAINING PAUSED (${creature.formattedOfflineTrainingRemaining(nowMs)} FROZEN) • Normal Drills Locked • Open DRILLS tab to Restart!"
+                                "⏸ STRIDEWALKER 24H STROLL PAUSED (${creature.formattedOfflineTrainingRemaining(nowMs)} FROZEN) • Manual Aetherlon Courses UNLOCKED! Open DOME tab to train or restart."
                             creature.isOnExpedition() -> {
                                 val exp = DigimonCatalog.getExpedition(creature.activeExpeditionId)
-                                "ON EXPEDITION: ${exp?.title ?: "Active"} (${exp?.durationLabel ?: ""}) • Keep Fed & Cryo-Rested!"
+                                "ON EXPEDITION: ${exp?.title ?: "Active"} (${exp?.durationLabel ?: ""}) • Keep Fed & Sanctuary-Rested!"
                             }
                             creature.isRareLevel100Form() ->
-                                "RARE LVL-100 MYTHIC APEX ACHIEVED • Total Drills ${raisingProgress.drillsCompleted}"
+                                "LVL-100 SOVEREIGN LEGENDARY ACHIEVED • Total Courses ${raisingProgress.drillsCompleted}"
                             canDigivolve ->
-                                "ALL EVOLUTION REQUIREMENTS MET (LVL ${creature.currentLevel()})! Tap EVOLVE READY to Digivolve!"
+                                "ALL CREST EVOLUTION GATES MET (LVL ${creature.currentLevel()})! Tap ASCEND READY to evolve!"
                             creature.stage == "Mega" ->
-                                "MEGA STAGE (LVL ${creature.currentLevel()}/100) • Train THIS monster to LVL 100 & meet stats to unlock the 6 Rare Monsters!"
+                                "MEGA STAGE (LVL ${creature.currentLevel()}/100) • Train THIS companion to LVL 100 & meet stats to unlock the 6 Sovereign Legendaries!"
                             creature.currentLevel() < 20 ->
-                                "EVOLUTION LOCKED UNTIL LVL 20 (Now LVL ${creature.currentLevel()}/20) • Train (10 Coins) or 24h Offline Train (100 Coins)!"
+                                "ASCENSION LOCKED UNTIL LVL 20 (Now LVL ${creature.currentLevel()}/20) • Train in Aetherlon Dome (10 Coins) or 24h StrideWalker (100 Coins)!"
                             else ->
-                                "LVL ${creature.currentLevel()}/100 • Sync ${creature.evolutionProgress}/100% • Meet all branch stats & Sync to evolve"
+                                "LVL ${creature.currentLevel()}/100 • Sync ${creature.evolutionProgress}/100% • Meet all branch stats & Sync to ascend"
                         },
                         style = MaterialTheme.typography.labelMedium,
                         color = when {
@@ -753,15 +826,173 @@ private fun ActivePartnerHoloStageCard(
                     )
                 }
 
-                // Row 3: Full-width 4-Stat Strip (ATK, DEF, SPD, WIS)
+                // Row 3: Full-width 4-Stat Strip (ATK, DEF, SPD, WIS with Nature & Relic Effective Stat Boosts)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    MiniStatChip("ATK", creature.attack, Color(0xFFFF7043), Modifier.weight(1f))
-                    MiniStatChip("DEF", creature.defense, HoloCyanPrimary, Modifier.weight(1f))
-                    MiniStatChip("SPD", creature.speed, PlasmaVioletStamina, Modifier.weight(1f))
-                    MiniStatChip("WIS", creature.wisdom, BioEmeraldHealth, Modifier.weight(1f))
+                    MiniStatChip("ATK", creature.effectiveAttack(), Color(0xFFFF7043), Modifier.weight(1f))
+                    MiniStatChip("DEF", creature.effectiveDefense(), HoloCyanPrimary, Modifier.weight(1f))
+                    MiniStatChip("SPD", creature.effectiveSpeed(), PlasmaVioletStamina, Modifier.weight(1f))
+                    MiniStatChip("WIS", creature.effectiveWisdom(), BioEmeraldHealth, Modifier.weight(1f))
+                }
+
+                // Row 3B: Classic RPG Loadout (Nature Mint, Held Relic, Elemental Chart & 4-Move Kit)
+                var showRpgLoadoutDetails by rememberSaveable { mutableStateOf(false) }
+                val activeNature = creature.companionNature()
+                val activeRelic = creature.heldRelic()
+                val fourMoves = remember(creature.speciesId, creature.nickname) {
+                    DigimonCatalog.getFourBattleMoves(creature)
+                }
+                Surface(
+                    color = CyberVoidBg.copy(alpha = 0.82f),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, HoloCyanPrimary.copy(alpha = 0.45f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("rpg_loadout_summary_card")
+                ) {
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "🌿 NATURE: ${activeNature.displayName.uppercase()} (${activeNature.effectSummary})",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = BioEmeraldHealth
+                                )
+                                Text(
+                                    text = "💎 HELD RELIC: ${activeRelic.displayName} (${activeRelic.effectSummary})",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = EvolutionGoldSecondary
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { showRpgLoadoutDetails = !showRpgLoadoutDetails },
+                                border = BorderStroke(1.dp, HoloCyanPrimary),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                                modifier = Modifier.testTag("toggle_rpg_loadout_button")
+                            ) {
+                                Text(
+                                    text = if (showRpgLoadoutDetails) "HIDE KIT ▲" else "MOVES & GEAR ▼",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = HoloCyanPrimary
+                                )
+                            }
+                        }
+
+                        Text(
+                            text = "⚔️ 2.0x Strong vs: ${com.example.data.model.ElementalMatchupEngine.strongAgainstSummary(creature.attribute)} • Weak vs: ${com.example.data.model.ElementalMatchupEngine.weakAgainstSummary(creature.attribute)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = HoloCyanPrimary
+                        )
+
+                        if (showRpgLoadoutDetails) {
+                            Text(
+                                text = "ATTUNE NATURE MINT (TAP TO SWITCH):",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White
+                            )
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                com.example.data.model.CompanionNature.entries.forEach { nat ->
+                                    val selectedNat = nat == activeNature
+                                    Surface(
+                                        color = if (selectedNat) BioEmeraldHealth.copy(alpha = 0.25f) else HoloSlateSurface,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, if (selectedNat) BioEmeraldHealth else BioEmeraldHealth.copy(alpha = 0.35f)),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { onChangeNature(nat) }
+                                            .testTag("select_nature_${nat.code.lowercase()}")
+                                    ) {
+                                        Text(
+                                            text = "${nat.displayName} (${nat.effectSummary})",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (selectedNat) BioEmeraldHealth else Color.White,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Text(
+                                text = "EQUIP HELD RELIC (TAP TO EQUIP):",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White
+                            )
+                            FlowRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                com.example.data.model.HeldRelicItem.entries.forEach { relic ->
+                                    val selectedRelic = relic == activeRelic
+                                    Surface(
+                                        color = if (selectedRelic) EvolutionGoldSecondary.copy(alpha = 0.25f) else HoloSlateSurface,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, if (selectedRelic) EvolutionGoldSecondary else EvolutionGoldSecondary.copy(alpha = 0.35f)),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { onEquipRelic(relic) }
+                                            .testTag("equip_relic_${relic.code.lowercase()}")
+                                    ) {
+                                        Text(
+                                            text = "${relic.displayName} • ${relic.effectSummary}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = if (selectedRelic) EvolutionGoldSecondary else Color.White,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            Text(
+                                text = "4-MOVE TACTICAL COMBAT KIT (USED IN WILD SAFARI & SANCTUMS):",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = HoloCyanPrimary
+                            )
+                            fourMoves.forEach { move ->
+                                Surface(
+                                    color = HoloSlateSurface,
+                                    shape = RoundedCornerShape(8.dp),
+                                    border = BorderStroke(1.dp, HoloCyanPrimary.copy(alpha = 0.3f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 8.dp, vertical = 5.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = "M${move.moveIndex + 1}: ${move.moveName} [${move.elementAttribute.uppercase()} • PWR ${move.power} • PP ${move.maxPp}]",
+                                                style = MaterialTheme.typography.labelMedium,
+                                                color = EvolutionGoldSecondary
+                                            )
+                                            Text(
+                                                text = move.effectDescription,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Row 4: Quick Action Strip inside Holo-Stage
@@ -784,12 +1015,12 @@ private fun ActivePartnerHoloStageCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.FitnessCenter,
-                            contentDescription = "Launch Interactive Drill",
+                            contentDescription = "Launch Aetherlon Course",
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(5.dp))
                         Text(
-                            text = "TRAIN (10 COINS)",
+                            text = "AETHERLON (10c)",
                             style = MaterialTheme.typography.labelLarge,
                             textAlign = TextAlign.Center
                         )
@@ -810,19 +1041,19 @@ private fun ActivePartnerHoloStageCard(
                     ) {
                         Icon(
                             imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = "Evolution Matrix",
+                            contentDescription = "Crest Evolution Matrix",
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(5.dp))
                         Text(
-                            text = if (canDigivolve) "EVOLVE READY!" else "EVOLVE (LVL 20+)",
+                            text = if (canDigivolve) "ASCEND READY!" else "ASCEND (LVL 20+)",
                             style = MaterialTheme.typography.labelLarge,
                             textAlign = TextAlign.Center
                         )
                     }
                 }
 
-                // Row 5: Wild Taming (100 Monsters), 10 Expeditions (24h), & Unique Skill Tree
+                // Row 5: Emerald Reserve Safari (100 Companions), 16 Sanctum Crests (24h), & Unique Skill Tree
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -841,7 +1072,7 @@ private fun ActivePartnerHoloStageCard(
                             .testTag("stage_wild_taming_button")
                     ) {
                         Text(
-                            text = "TAME WILD (2c)",
+                            text = "SAFARI ORBS (2c)",
                             style = MaterialTheme.typography.labelMedium,
                             textAlign = TextAlign.Center
                         )
@@ -861,7 +1092,7 @@ private fun ActivePartnerHoloStageCard(
                             .testTag("stage_expeditions_button")
                     ) {
                         Text(
-                            text = if (creature.isOnExpedition()) "EXPEDITION LIVE" else "10 EXPEDITIONS",
+                            text = if (creature.isOnExpedition()) "EXPEDITION LIVE" else "16 CREST ROUTES",
                             style = MaterialTheme.typography.labelMedium,
                             textAlign = TextAlign.Center
                         )
@@ -1605,7 +1836,7 @@ private fun NewTamerQuickStartGuideCard(
     onOpenWildTamingModal: () -> Unit,
     onOpenEvolutionMatrix: () -> Unit
 ) {
-    var expanded by remember { mutableStateOf(activeCreature.currentLevel() <= 3) }
+    var isMinimized by rememberSaveable { mutableStateOf(activeCreature.currentLevel() > 2) }
     val nowMs = System.currentTimeMillis()
     val inOfflineSession = activeCreature.hasOfflineTrainingSession(nowMs)
 
@@ -1613,52 +1844,65 @@ private fun NewTamerQuickStartGuideCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("new_tamer_quick_start_card"),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = HoloCardElevated),
-        border = BorderStroke(1.5.dp, HoloCyanPrimary.copy(alpha = 0.65f))
+        border = BorderStroke(1.dp, HoloCyanPrimary.copy(alpha = if (isMinimized) 0.4f else 0.7f))
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .padding(horizontal = 14.dp, vertical = 10.dp),
+                .padding(horizontal = 12.dp, vertical = if (isMinimized) 6.dp else 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { isMinimized = !isMinimized }
+                    .testTag("toggle_tamer_guide_minimize_button"),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.weight(1f)
                 ) {
                     Icon(
                         imageVector = Icons.Default.AutoAwesome,
                         contentDescription = null,
                         tint = EvolutionGoldSecondary,
-                        modifier = Modifier.size(18.dp)
+                        modifier = Modifier.size(16.dp)
                     )
                     Column {
                         Text(
-                            text = "DIGIVICE TAMER QUICK-START GUIDE",
+                            text = if (isMinimized) {
+                                "CHRONOGEAR GUIDE (MINIMIZED) • Tap to Expand"
+                            } else {
+                                "CHRONOGEAR DUAL-REALM TAMER GUIDE"
+                            },
                             style = MaterialTheme.typography.labelLarge,
-                            color = HoloCyanPrimary
+                            color = HoloCyanPrimary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        Text(
-                            text = "New Game Bonus: 200 DigiCoins • 10 Starter Monsters w/ Unique Abilities",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = EvolutionGoldSecondary
-                        )
+                        if (!isMinimized) {
+                            Text(
+                                text = "New Game Bonus: 200 Crest Coins • 10 Starters w/ Unique Abilities",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = EvolutionGoldSecondary
+                            )
+                        }
                     }
                 }
+                Spacer(modifier = Modifier.width(8.dp))
                 Surface(
                     color = HoloSlateSurface,
                     shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, HoloCyanPrimary.copy(alpha = 0.5f))
+                    border = BorderStroke(1.dp, HoloCyanPrimary.copy(alpha = 0.55f)),
+                    modifier = Modifier.clickable { isMinimized = !isMinimized }
                 ) {
                     Text(
-                        text = if (expanded) "HIDE ▲" else "HOW TO PLAY ▼",
+                        text = if (isMinimized) "EXPAND +" else "MINIMIZE —",
                         style = MaterialTheme.typography.labelSmall,
                         color = HoloCyanPrimary,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -1666,7 +1910,7 @@ private fun NewTamerQuickStartGuideCard(
                 }
             }
 
-            if (expanded) {
+            if (!isMinimized) {
                 Surface(
                     color = CyberVoidBg.copy(alpha = 0.75f),
                     shape = RoundedCornerShape(12.dp),
@@ -1678,22 +1922,22 @@ private fun NewTamerQuickStartGuideCard(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Text(
-                            text = "1. 🪙 200 STARTING DIGICOINS: Every New Game starts with 200 DigiCoins (+5 Coins every 5m). Spend 10 Coins per normal Drill or 100 Coins for 24-Hour Offline Auto-Training.",
+                            text = "1. 🪙 200 STARTING CREST COINS: Every New Game in Breezewood Village starts with 200 Crest Coins (+5 Coins every 5m). Spend 10 Coins per Aetherlon Course or 100 Coins for 24-Hour StrideWalker Offline Stroll.",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color.White
                         )
                         Text(
-                            text = "2. ⏸ PAUSABLE OFFLINE TRAINING: While in 24h Offline Training, normal drills are locked. You can PAUSE Offline Training at any time to freeze the timer and RESTART when ready!",
+                            text = "2. ⏸ PAUSE STRIDEWALKER TO MANUALLY TRAIN: While 24h StrideWalker Stroll is active, manual courses are locked. PAUSE StrideWalker anytime to freeze the timer AND unlock manual Aetherlon training!",
                             style = MaterialTheme.typography.bodySmall,
                             color = BioEmeraldHealth
                         )
                         Text(
-                            text = "3. 🧬 DIGIVOLUTION AT LVL 20+: Train your Rookie Digital Monster to LVL 20+ and meet branch stats (ATK/DEF/SPD/WIS) to Digivolve into Champion, Ultimate, Mega & LVL-100 Mythic forms.",
+                            text = "3. 🧬 CREST EVOLUTION AT LVL 20+: Train your Rookie Companion to LVL 20+ and meet branch stats (ATK/DEF/SPD/WIS) to ascend into Champion, Ultimate, Mega & LVL-100 Sovereign forms.",
                             style = MaterialTheme.typography.bodySmall,
                             color = EvolutionGoldSecondary
                         )
                         Text(
-                            text = "4. 🍖 CARE & WILD TAMING: Keep Hunger & Stamina high using the Store/Feed bag and Cryo-Rest, or visit the WORLD tab to battle & tame wild Digital Monsters ($digiCoins Coins available).",
+                            text = "4. 🍯 NECTAR CARE & EMERALD RESERVE SAFARI: Keep Satiety & Stamina high using the Sunspire Bazaar Nectar Pouch and Sanctuary Rest, or visit WORLD to toss Acorn Orbs at Common, Rare, Ultra Rare & 1% Sovereign wild companions ($digiCoins Coins).",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1715,7 +1959,7 @@ private fun NewTamerQuickStartGuideCard(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = if (inOfflineSession) "MANAGE OFFLINE TRAIN" else "START DRILLS",
+                            text = if (inOfflineSession) "STRIDEWALKER / DOME" else "AETHERLON DOME",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1
                         )
@@ -1731,7 +1975,7 @@ private fun NewTamerQuickStartGuideCard(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "EVO REQUIREMENTS",
+                            text = "CREST LINEAGE",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1
                         )
@@ -1747,7 +1991,7 @@ private fun NewTamerQuickStartGuideCard(
                         modifier = Modifier.weight(1f)
                     ) {
                         Text(
-                            text = "WILD RADAR",
+                            text = "SAFARI RADAR",
                             style = MaterialTheme.typography.labelSmall,
                             maxLines = 1
                         )

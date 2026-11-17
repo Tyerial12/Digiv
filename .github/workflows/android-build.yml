@@ -156,20 +156,20 @@ jobs:
       - name: Build Debug APK
         run: |
           gradle :app:assembleDebug --no-daemon
-          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/DigiVerse-v32.0.apk
+          cp app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/DigiVerse-v33.0.apk
 
       - name: Upload Debug APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: DigiVerse-v32-debug-apk
-          path: app/build/outputs/apk/debug/DigiVerse-v32.0.apk
+          name: DigiVerse-v33-debug-apk
+          path: app/build/outputs/apk/debug/DigiVerse-v33.0.apk
 
       - name: Publish APK to GitHub Releases
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v32.0
-          name: "Digi Verse v32.0 APK"
-          body: "Installable Android APK for Digi Verse v32.0 (includes 200 DigiCoins on New Game only, 10 Rookie Starter Digital Monsters with unique stats & abilities, Pausable 24-Hour Offline Auto-Training with normal drill lockout, upgraded Digital Monster V-Pet graphics, and New Tamer Quick-Start Guide)."
-          files: app/build/outputs/apk/debug/DigiVerse-v32.0.apk
+          tag_name: v33.0
+          name: "Digi Verse v33.0 APK"
+          body: "Installable Android APK for Digi Verse v33.0 (includes 5-tier Wild Monster Rarity & scaling capture difficulty, mobile-fitted 2-column 10-Rookie Starter Selection screen, 200 DigiCoins on New Game only, and Pausable 24-Hour Offline Auto-Training)."
+          files: app/build/outputs/apk/debug/DigiVerse-v33.0.apk
           prerelease: false

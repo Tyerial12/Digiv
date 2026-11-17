@@ -370,3 +370,162 @@ test("Player Chat & Friends: unauthenticated users are blocked; authenticated us
   await assertSucceeds(friendRefAlice.delete());
 });
 
+test("Acorn Orbs Inventory: owner can create, list, and update own Acorn Orb pouch; unauth, cross-user, and invalid payloads fail", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const created = new Date(Date.now() - 5000);
+
+  // Unauthenticated cannot read or write Acorn Orbs
+  await assertFails(unauthDb.collection("users").doc(ALICE_UID).collection("acornOrbs").get());
+  await assertFails(
+    unauthDb.collection("users").doc(ALICE_UID).collection("acornOrbs").doc("standard_acorn_orb").set({
+      userId: ALICE_UID,
+      orbTypeId: "standard_acorn_orb",
+      orbDisplayName: "Acorn Orb",
+      quantity: 5,
+      captureBonusPercent: 0,
+      gildedAcornCount: 2,
+      relicShardCount: 1,
+      lastSyncedMs: Date.now(),
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+
+  // Authenticated owner creates standard_acorn_orb and lunar_moon_orb documents
+  const stdOrbRef = aliceDb.collection("users").doc(ALICE_UID).collection("acornOrbs").doc("standard_acorn_orb");
+  await assertSucceeds(
+    stdOrbRef.set({
+      userId: ALICE_UID,
+      orbTypeId: "standard_acorn_orb",
+      orbDisplayName: "Acorn Orb",
+      quantity: 12,
+      captureBonusPercent: 0,
+      gildedAcornCount: 4,
+      relicShardCount: 1,
+      lastSyncedMs: Date.now(),
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+
+  const lunarOrbRef = aliceDb.collection("users").doc(ALICE_UID).collection("acornOrbs").doc("lunar_moon_orb");
+  await assertSucceeds(
+    lunarOrbRef.set({
+      userId: ALICE_UID,
+      orbTypeId: "lunar_moon_orb",
+      orbDisplayName: "Lunar Moon Orb",
+      quantity: 3,
+      captureBonusPercent: 25,
+      gildedAcornCount: 4,
+      relicShardCount: 1,
+      lastSyncedMs: Date.now(),
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+
+  // Owner can list all Acorn Orbs in their pouch
+  await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).collection("acornOrbs").get());
+
+  // Owner can partially update quantity after throwing an Acorn Orb
+  await assertSucceeds(
+    stdOrbRef.update({
+      quantity: 11,
+      gildedAcornCount: 5,
+      lastSyncedMs: Date.now(),
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Cross-user isolation: Bob cannot read or mutate Alice's Acorn Orbs
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("acornOrbs").get());
+  await assertFails(
+    bobDb.collection("users").doc(ALICE_UID).collection("acornOrbs").doc("standard_acorn_orb").update({
+      quantity: 0,
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Reject invalid orbTypeId or negative quantity
+  await assertFails(
+    aliceDb.collection("users").doc(ALICE_UID).collection("acornOrbs").doc("hacked_orb").set({
+      userId: ALICE_UID,
+      orbTypeId: "hacked_orb",
+      orbDisplayName: "Hacked Orb",
+      quantity: 99,
+      captureBonusPercent: 50,
+      gildedAcornCount: 0,
+      relicShardCount: 0,
+      lastSyncedMs: Date.now(),
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+});
+
+test("Emerald Reserve Collection: owner can record wild captures, list vault, and toggle active party; cross-user and invalid payloads fail", async () => {
+  const unauthDb = testEnv.unauthenticatedContext().firestore();
+  const aliceDb = testEnv.authenticatedContext(ALICE_UID).firestore();
+  const bobDb = testEnv.authenticatedContext(BOB_UID).firestore();
+  const created = new Date(Date.now() - 5000);
+
+  await assertFails(unauthDb.collection("users").doc(ALICE_UID).collection("emeraldReserve").get());
+
+  const entryRef = aliceDb.collection("users").doc(ALICE_UID).collection("emeraldReserve").doc("reserve_capture_01");
+  await assertSucceeds(
+    entryRef.set({
+      userId: ALICE_UID,
+      speciesId: "patamon",
+      speciesName: "Sproutling",
+      nickname: "★Sproutling",
+      stage: "Rookie",
+      elementAttribute: "Flora",
+      rarityTier: "RARE",
+      capturedLevel: 14,
+      attack: 58,
+      defense: 52,
+      speed: 50,
+      wisdom: 54,
+      bondLevel: 35,
+      natureCode: "BRAVE",
+      heldRelicCode: "VERDANT_SEED",
+      chromaticShiny: true,
+      orbUsedId: "lunar_moon_orb",
+      biomeZone: "Emerald Reserve Safari",
+      inActiveParty: true,
+      capturedAtMs: Date.now() - 5000,
+      createdAt: created,
+      updatedAt: created,
+    })
+  );
+
+  // Owner can list their Emerald Reserve collection
+  await assertSucceeds(aliceDb.collection("users").doc(ALICE_UID).collection("emeraldReserve").get());
+
+  // Owner can update inActiveParty and nickname when swapping companions between Party & Sanctuary Vault
+  await assertSucceeds(
+    entryRef.update({
+      inActiveParty: false,
+      nickname: "Sunleaf",
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Immutable fields (speciesId, capturedAtMs, createdAt) cannot be mutated
+  await assertFails(
+    entryRef.update({
+      speciesId: "omegamon_x",
+      updatedAt: new Date(Date.now() - 500),
+    })
+  );
+
+  // Cross-user isolation: Bob cannot read or delete Alice's Emerald Reserve entries
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("emeraldReserve").get());
+  await assertFails(bobDb.collection("users").doc(ALICE_UID).collection("emeraldReserve").doc("reserve_capture_01").delete());
+
+  // Owner can release/delete an entry from Emerald Reserve
+  await assertSucceeds(entryRef.delete());
+});
+

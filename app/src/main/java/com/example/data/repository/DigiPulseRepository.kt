@@ -2,10 +2,13 @@ package com.example.data.repository
 
 import android.content.Context
 import com.example.R
+import com.example.data.model.AcornOrbInventory
+import com.example.data.model.AcornOrbType
 import com.example.data.model.ChatMessage
 import com.example.data.model.DigiRation
 import com.example.data.model.DigimonCatalog
 import com.example.data.model.DigimonCreature
+import com.example.data.model.EmeraldReserveEntry
 import com.example.data.model.FriendConnection
 import com.example.data.model.LeaderboardEntry
 import com.example.data.model.PetNotification
@@ -17,6 +20,8 @@ import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreException
+import com.google.firebase.firestore.FirebaseFirestoreSettings
+import com.google.firebase.firestore.PersistentCacheSettings
 import com.google.firebase.firestore.snapshots
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -35,13 +40,25 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
 
     private var appContext: Context? = null
 
-    // CRITICAL: Always initialize with R.string.firestore_database_id
+    // CRITICAL: Always initialize with R.string.firestore_database_id and configure PersistentCacheSettings for offline wild catching
     constructor(context: Context) : this(
         FirebaseFirestore.getInstance(
             context.applicationContext.getString(R.string.firestore_database_id)
         )
     ) {
         this.appContext = context.applicationContext
+        try {
+            val persistentSettings = FirebaseFirestoreSettings.Builder(db.firestoreSettings)
+                .setLocalCacheSettings(
+                    PersistentCacheSettings.newBuilder()
+                        .setSizeBytes(100L * 1024L * 1024L)
+                        .build()
+                )
+                .build()
+            db.firestoreSettings = persistentSettings
+        } catch (_: Exception) {
+            // Firestore settings already locked on this instance
+        }
     }
 
     private val auth = Firebase.auth
@@ -61,7 +78,61 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                     snapshot.toObjects(
                         DigimonCreature::class.java,
                         DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
-                    ).sortedBy { it.createdAt?.seconds ?: 0L }
+                    ).map { c ->
+                        c.copy(attribute = DigimonCatalog.getSpec(c.speciesId).attribute)
+                    }.sortedBy { it.createdAt?.seconds ?: 0L }
+                }
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    val exceptionToLog = firestoreError ?: (error as? Exception)
+                    if (exceptionToLog != null && auth.currentUser?.uid == uid) {
+                        handleFirestoreError(exceptionToLog, OperationType.LIST, path)
+                    }
+                    throw error
+                }
+        )
+    }
+
+    fun observeAcornOrbs(): Flow<List<AcornOrbInventory>> = flow {
+        val uid = requireUserId()
+        val path = "users/$uid/acornOrbs"
+        emitAll(
+            db.collection("users").document(uid).collection("acornOrbs")
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        AcornOrbInventory::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    ).sortedBy { it.orbTypeId }
+                }
+                .catch { error ->
+                    val firestoreError = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (firestoreError == null && error is CancellationException) throw error
+                    val exceptionToLog = firestoreError ?: (error as? Exception)
+                    if (exceptionToLog != null && auth.currentUser?.uid == uid) {
+                        handleFirestoreError(exceptionToLog, OperationType.LIST, path)
+                    }
+                    throw error
+                }
+        )
+    }
+
+    fun observeEmeraldReserve(): Flow<List<EmeraldReserveEntry>> = flow {
+        val uid = requireUserId()
+        val path = "users/$uid/emeraldReserve"
+        emitAll(
+            db.collection("users").document(uid).collection("emeraldReserve")
+                .snapshots()
+                .map { snapshot ->
+                    snapshot.toObjects(
+                        EmeraldReserveEntry::class.java,
+                        DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                    ).sortedByDescending { it.capturedAtMs }
                 }
                 .catch { error ->
                     val firestoreError = generateSequence(error) { it.cause }
@@ -532,7 +603,7 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
             "offeredSpeciesId" to offeredCreature.speciesId.take(40),
             "offeredSpeciesName" to offeredCreature.speciesName.take(50),
             "offeredStage" to offeredCreature.stage,
-            "offeredAttribute" to offeredCreature.attribute,
+            "offeredAttribute" to sanitizeAttribute(offeredCreature.attribute),
             "offeredLevel" to offeredCreature.currentLevel().coerceIn(1, 100),
             "offeredAttack" to offeredCreature.attack.coerceIn(0, 9999),
             "offeredDefense" to offeredCreature.defense.coerceIn(0, 9999),
@@ -590,7 +661,7 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
             "tradedInSpeciesId" to myCreatureToTrade.speciesId.take(40),
             "tradedInSpeciesName" to myCreatureToTrade.speciesName.take(50),
             "tradedInStage" to myCreatureToTrade.stage,
-            "tradedInAttribute" to myCreatureToTrade.attribute,
+            "tradedInAttribute" to sanitizeAttribute(myCreatureToTrade.attribute),
             "tradedInLevel" to myCreatureToTrade.currentLevel().coerceIn(1, 100),
             "tradedInAttack" to myCreatureToTrade.attack.coerceIn(0, 9999),
             "tradedInDefense" to myCreatureToTrade.defense.coerceIn(0, 9999),
@@ -1090,6 +1161,161 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
                 throw e
             }
         }
+
+        // 5. Delete Acorn Orbs inventory documents
+        val orbsCol = userDoc.collection("acornOrbs")
+        val orbsSnap = runCatching { orbsCol.get().await() }.getOrNull()
+        if (orbsSnap != null) {
+            for (doc in orbsSnap.documents) {
+                runCatching { doc.reference.delete().await() }
+            }
+        }
+
+        // 6. Delete Emerald Reserve collection entries
+        val reserveCol = userDoc.collection("emeraldReserve")
+        val reserveSnap = runCatching { reserveCol.get().await() }.getOrNull()
+        if (reserveSnap != null) {
+            for (doc in reserveSnap.documents) {
+                runCatching { doc.reference.delete().await() }
+            }
+        }
+    }
+
+    suspend fun upsertAcornOrbInventory(
+        orbType: AcornOrbType,
+        quantity: Int,
+        gildedAcornCount: Int,
+        relicShardCount: Int
+    ): Result<Unit> = runCatching {
+        val uid = requireUserId()
+        val cleanQty = quantity.coerceIn(0, 9999)
+        val cleanGilded = gildedAcornCount.coerceIn(0, 9999)
+        val cleanRelic = relicShardCount.coerceIn(0, 9999)
+        val nowMs = System.currentTimeMillis()
+        val docRef = db.collection("users").document(uid).collection("acornOrbs").document(orbType.orbTypeId)
+        val existingSnap = runCatching { docRef.get().await() }.getOrNull()
+        if (existingSnap != null && existingSnap.exists()) {
+            val updates = mapOf(
+                "orbDisplayName" to orbType.displayName.take(50),
+                "quantity" to cleanQty,
+                "captureBonusPercent" to orbType.specialtyBonusPercent.coerceIn(0, 50),
+                "gildedAcornCount" to cleanGilded,
+                "relicShardCount" to cleanRelic,
+                "lastSyncedMs" to nowMs,
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            try {
+                docRef.update(updates).await()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+                throw e
+            }
+        } else {
+            val createPayload = mapOf(
+                "userId" to uid,
+                "orbTypeId" to orbType.orbTypeId,
+                "orbDisplayName" to orbType.displayName.take(50),
+                "quantity" to cleanQty,
+                "captureBonusPercent" to orbType.specialtyBonusPercent.coerceIn(0, 50),
+                "gildedAcornCount" to cleanGilded,
+                "relicShardCount" to cleanRelic,
+                "lastSyncedMs" to nowMs,
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            try {
+                docRef.set(createPayload).await()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                handleFirestoreError(e, OperationType.CREATE, docRef.path)
+                throw e
+            }
+        }
+    }
+
+    suspend fun recordEmeraldReserveCapture(entry: EmeraldReserveEntry): Result<String> = runCatching {
+        val uid = requireUserId()
+        val docId = entry.id.takeIf { it.isNotBlank() && it.matches(Regex("^[a-zA-Z0-9_\\-]+$")) }
+            ?: "reserve_${entry.capturedAtMs.coerceAtLeast(1L)}_${entry.speciesId.take(20)}"
+        val docRef = db.collection("users").document(uid).collection("emeraldReserve").document(docId)
+        val safeStage = entry.stage.takeIf { it in VALID_STAGES } ?: "Rookie"
+        val safeRarity = entry.rarityTier.takeIf { it in VALID_RARITY_TIERS } ?: "COMMON"
+        val safeOrbId = AcornOrbType.fromId(entry.orbUsedId).orbTypeId
+        val payload = mapOf(
+            "userId" to uid,
+            "speciesId" to entry.speciesId.trim().take(40).ifBlank { "patamon" },
+            "speciesName" to entry.speciesName.trim().take(50).ifBlank { "Sproutling" },
+            "nickname" to entry.nickname.trim().take(40).ifBlank { entry.speciesName.take(40).ifBlank { "Sproutling" } },
+            "stage" to safeStage,
+            "elementAttribute" to entry.elementAttribute.trim().take(40).ifBlank { "Flora" },
+            "rarityTier" to safeRarity,
+            "capturedLevel" to entry.capturedLevel.coerceIn(1, 100),
+            "attack" to entry.attack.coerceIn(1, 9999),
+            "defense" to entry.defense.coerceIn(1, 9999),
+            "speed" to entry.speed.coerceIn(1, 9999),
+            "wisdom" to entry.wisdom.coerceIn(1, 9999),
+            "bondLevel" to entry.bondLevel.coerceIn(0, 100),
+            "natureCode" to entry.natureCode.trim().take(20).ifBlank { "BRAVE" },
+            "heldRelicCode" to entry.heldRelicCode.trim().take(20).ifBlank { "VERDANT_SEED" },
+            "chromaticShiny" to entry.chromaticShiny,
+            "orbUsedId" to safeOrbId,
+            "biomeZone" to entry.biomeZone.trim().take(60).ifBlank { "Emerald Reserve Safari" },
+            "inActiveParty" to entry.inActiveParty,
+            "capturedAtMs" to entry.capturedAtMs.coerceAtLeast(0L),
+            "createdAt" to FieldValue.serverTimestamp(),
+            "updatedAt" to FieldValue.serverTimestamp()
+        )
+        try {
+            docRef.set(payload).await()
+            docRef.id
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, docRef.path)
+            throw e
+        }
+    }
+
+    suspend fun updateEmeraldReservePartyStatus(
+        entryId: String,
+        inActiveParty: Boolean,
+        nicknameOverride: String? = null
+    ): Result<Unit> = runCatching {
+        val uid = requireUserId()
+        require(entryId.isNotBlank()) { "Emerald Reserve entryId must not be blank" }
+        val docRef = db.collection("users").document(uid).collection("emeraldReserve").document(entryId)
+        val updates = buildMap<String, Any> {
+            put("inActiveParty", inActiveParty)
+            if (!nicknameOverride.isNullOrBlank()) {
+                put("nickname", nicknameOverride.trim().take(40))
+            }
+            put("updatedAt", FieldValue.serverTimestamp())
+        }
+        try {
+            docRef.update(updates).await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.UPDATE, docRef.path)
+            throw e
+        }
+    }
+
+    suspend fun deleteEmeraldReserveEntry(entryId: String): Result<Unit> = runCatching {
+        val uid = requireUserId()
+        require(entryId.isNotBlank()) { "Emerald Reserve entryId must not be blank" }
+        val docRef = db.collection("users").document(uid).collection("emeraldReserve").document(entryId)
+        try {
+            docRef.delete().await()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.DELETE, docRef.path)
+            throw e
+        }
     }
 
     suspend fun sendChatMessage(
@@ -1409,12 +1635,119 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
         p.edit().putString("local_creatures_$userId", arr.toString()).apply()
     }
 
+    fun loadLocalAcornOrbInventory(userId: String): Map<AcornOrbType, Int> {
+        val p = prefs() ?: return emptyMap()
+        val raw = p.getString("acorn_orbs_$userId", null)
+        val result = mutableMapOf<AcornOrbType, Int>()
+        if (raw != null) {
+            runCatching {
+                val json = JSONObject(raw)
+                for (orbType in AcornOrbType.entries) {
+                    val qty = json.optInt(orbType.orbTypeId, 0).coerceAtLeast(0)
+                    result[orbType] = qty
+                }
+            }
+        }
+        if (result.isEmpty()) {
+            val legacyStd = loadTammingBerryCount(userId)
+            for (orbType in AcornOrbType.entries) {
+                result[orbType] = if (orbType == AcornOrbType.STANDARD_ACORN_ORB) legacyStd else 0
+            }
+        }
+        return result
+    }
+
+    fun saveLocalAcornOrbInventory(userId: String, inventory: Map<AcornOrbType, Int>) {
+        val p = prefs() ?: return
+        val json = JSONObject()
+        for (orbType in AcornOrbType.entries) {
+            val qty = (inventory[orbType] ?: 0).coerceAtLeast(0)
+            json.put(orbType.orbTypeId, qty)
+        }
+        val stdCount = (inventory[AcornOrbType.STANDARD_ACORN_ORB] ?: 0).coerceAtLeast(0)
+        p.edit()
+            .putString("acorn_orbs_$userId", json.toString())
+            .putInt("berries_$userId", stdCount)
+            .apply()
+    }
+
+    fun loadLocalEmeraldReserve(userId: String): List<EmeraldReserveEntry> {
+        val p = prefs() ?: return emptyList()
+        val raw = p.getString("emerald_reserve_$userId", null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            val list = mutableListOf<EmeraldReserveEntry>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(
+                    EmeraldReserveEntry(
+                        id = obj.optString("id"),
+                        userId = obj.optString("userId", userId),
+                        speciesId = obj.optString("speciesId", "patamon"),
+                        speciesName = obj.optString("speciesName", "Sproutling"),
+                        nickname = obj.optString("nickname", "Sproutling"),
+                        stage = obj.optString("stage", "Rookie"),
+                        elementAttribute = obj.optString("elementAttribute", "Flora"),
+                        rarityTier = obj.optString("rarityTier", "COMMON"),
+                        capturedLevel = obj.optInt("capturedLevel", 1),
+                        attack = obj.optInt("attack", 45),
+                        defense = obj.optInt("defense", 38),
+                        speed = obj.optInt("speed", 42),
+                        wisdom = obj.optInt("wisdom", 34),
+                        bondLevel = obj.optInt("bondLevel", 20),
+                        natureCode = obj.optString("natureCode", "BRAVE"),
+                        heldRelicCode = obj.optString("heldRelicCode", "VERDANT_SEED"),
+                        chromaticShiny = obj.optBoolean("chromaticShiny", false),
+                        orbUsedId = obj.optString("orbUsedId", AcornOrbType.STANDARD_ACORN_ORB.orbTypeId),
+                        biomeZone = obj.optString("biomeZone", "Emerald Reserve Safari"),
+                        inActiveParty = obj.optBoolean("inActiveParty", false),
+                        capturedAtMs = obj.optLong("capturedAtMs", System.currentTimeMillis())
+                    )
+                )
+            }
+            list
+        }.getOrDefault(emptyList())
+    }
+
+    fun saveLocalEmeraldReserve(userId: String, entries: List<EmeraldReserveEntry>) {
+        val p = prefs() ?: return
+        val arr = JSONArray()
+        for (e in entries) {
+            val obj = JSONObject()
+            obj.put("id", e.id)
+            obj.put("userId", e.userId)
+            obj.put("speciesId", e.speciesId)
+            obj.put("speciesName", e.speciesName)
+            obj.put("nickname", e.nickname)
+            obj.put("stage", e.stage)
+            obj.put("elementAttribute", e.elementAttribute)
+            obj.put("rarityTier", e.rarityTier)
+            obj.put("capturedLevel", e.capturedLevel)
+            obj.put("attack", e.attack)
+            obj.put("defense", e.defense)
+            obj.put("speed", e.speed)
+            obj.put("wisdom", e.wisdom)
+            obj.put("bondLevel", e.bondLevel)
+            obj.put("natureCode", e.natureCode)
+            obj.put("heldRelicCode", e.heldRelicCode)
+            obj.put("chromaticShiny", e.chromaticShiny)
+            obj.put("orbUsedId", e.orbUsedId)
+            obj.put("biomeZone", e.biomeZone)
+            obj.put("inActiveParty", e.inActiveParty)
+            obj.put("capturedAtMs", e.capturedAtMs)
+            arr.put(obj)
+        }
+        p.edit().putString("emerald_reserve_$userId", arr.toString()).apply()
+    }
+
     fun clearLocalUserProgress(userId: String) {
         val p = prefs() ?: return
         p.edit()
             .remove("started_game_$userId")
             .remove("coins_$userId")
             .remove("berries_$userId")
+            .remove("acorn_orbs_$userId")
+            .remove("emerald_reserve_$userId")
             .remove("parts_std_$userId")
             .remove("parts_ultra_$userId")
             .remove("food_$userId")
@@ -1428,6 +1761,7 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
         const val PREFS_NAME = "digiverse_player_state"
         val VALID_STAGES = setOf("Rookie", "Champion", "Ultimate", "Mega")
         val VALID_ATTRIBUTES = setOf("Vaccine", "Data", "Virus", "Free")
+        val VALID_RARITY_TIERS = setOf("COMMON", "UNCOMMON", "RARE", "ULTRA_RARE", "LEGENDARY_APEX")
         val VALID_ACTIVITY_TYPES = setOf(
             "Power Drill", "Speed Drill", "Defense Drill", "Wisdom Drill",
             "Nutrient Feed", "Medical Care", "Rest Cycle", "Digivolution",

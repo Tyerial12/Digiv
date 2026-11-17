@@ -1,20 +1,22 @@
 package com.example.data.model
 
+import androidx.annotation.Keep
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.DocumentId
 import com.google.firebase.firestore.IgnoreExtraProperties
 import com.google.firebase.firestore.PropertyName
 import com.google.firebase.firestore.ServerTimestamp
 
+@Keep
 @IgnoreExtraProperties
 data class DigimonCreature(
     @DocumentId val id: String = "",
     val userId: String = "",
-    val nickname: String = "Agumon",
-    val speciesId: String = "agumon",
-    val speciesName: String = "Agumon",
+    val nickname: String = "Sproutling",
+    val speciesId: String = "patamon",
+    val speciesName: String = "Sproutling",
     val stage: String = "Rookie",
-    val attribute: String = "Vaccine",
+    val attribute: String = "Flora",
     val health: Int = 95,
     val stamina: Int = 85,
     val hunger: Int = 80,
@@ -49,7 +51,8 @@ data class DigimonCreature(
                 !it.startsWith("bn:") &&
                 !it.startsWith("ex:") &&
                 !it.startsWith("ot:") &&
-                !it.startsWith("rc:")
+                !it.startsWith("rc:") &&
+                !it.startsWith("rg:")
         }.distinct()
     }
 
@@ -184,6 +187,84 @@ data class DigimonCreature(
         return "%d:%02d".format(java.util.Locale.US, mins, secs)
     }
 
+    private fun persistedRpgParts(): List<String>? {
+        return unlockedForms
+            .firstOrNull { it.startsWith("rg:") }
+            ?.removePrefix("rg:")
+            ?.split(":")
+    }
+
+    fun companionNature(): CompanionNature {
+        val code = persistedRpgParts()?.getOrNull(0)
+        if (!code.isNullOrBlank()) {
+            return CompanionNature.fromCode(code)
+        }
+        val entries = CompanionNature.entries
+        val seed = kotlin.math.abs((id.ifBlank { speciesId }).hashCode())
+        return entries[seed % entries.size]
+    }
+
+    fun heldRelic(): HeldRelicItem {
+        val code = persistedRpgParts()?.getOrNull(1)
+        if (!code.isNullOrBlank()) {
+            return HeldRelicItem.fromCode(code)
+        }
+        val attr = DigimonCatalog.getSpec(speciesId).attribute.uppercase()
+        return when {
+            attr.contains("PYRO") || attr.contains("FIRE") -> HeldRelicItem.SEARING_CHARCOAL
+            attr.contains("AQUA") || attr.contains("WATER") || attr.contains("ASTRAL") -> HeldRelicItem.MYSTIC_DEWDROP
+            attr.contains("FLORA") || attr.contains("TERRA") -> HeldRelicItem.VERDANT_SEED
+            attr.contains("STORM") || attr.contains("GALE") -> HeldRelicItem.STORM_MAGNET
+            else -> HeldRelicItem.LEFTOVER_AMBROSIA
+        }
+    }
+
+    fun isChromaticShiny(): Boolean {
+        return persistedRpgParts()?.getOrNull(2) == "1"
+    }
+
+    fun earnedSanctumBadgesMask(): Int {
+        return persistedRpgParts()?.getOrNull(3)?.toIntOrNull() ?: 0
+    }
+
+    fun hasSanctumBadge(badgeNumber: Int): Boolean {
+        if (badgeNumber !in 1..16) return false
+        val bit = 1 shl (badgeNumber - 1)
+        return (earnedSanctumBadgesMask() and bit) != 0
+    }
+
+    fun earnedSanctumBadgesCount(): Int {
+        return Integer.bitCount(earnedSanctumBadgesMask() and 0xFFFF)
+    }
+
+    fun effectiveAttack(): Int {
+        val natureMult = companionNature().atkMult
+        val relicMult = 1f + (heldRelic().atkBonusPercent / 100f)
+        val shinyMult = if (isChromaticShiny()) 1.15f else 1.0f
+        return (attack * natureMult * relicMult * shinyMult).toInt().coerceAtLeast(1)
+    }
+
+    fun effectiveDefense(): Int {
+        val natureMult = companionNature().defMult
+        val relicMult = 1f + (heldRelic().defBonusPercent / 100f)
+        val shinyMult = if (isChromaticShiny()) 1.15f else 1.0f
+        return (defense * natureMult * relicMult * shinyMult).toInt().coerceAtLeast(1)
+    }
+
+    fun effectiveSpeed(): Int {
+        val natureMult = companionNature().spdMult
+        val relicMult = 1f + (heldRelic().spdBonusPercent / 100f)
+        val shinyMult = if (isChromaticShiny()) 1.15f else 1.0f
+        return (speed * natureMult * relicMult * shinyMult).toInt().coerceAtLeast(1)
+    }
+
+    fun effectiveWisdom(): Int {
+        val natureMult = companionNature().wisMult
+        val relicMult = 1f + (heldRelic().wisBonusPercent / 100f)
+        val shinyMult = if (isChromaticShiny()) 1.15f else 1.0f
+        return (wisdom * natureMult * relicMult * shinyMult).toInt().coerceAtLeast(1)
+    }
+
     fun withUpdatedMetadataInForms(
         newSkillNodes: Collection<String> = allUnlockedSkillNodeIds(),
         newBonusStats: Int = persistedNonTrainingBonusStats(),
@@ -193,9 +274,13 @@ data class DigimonCreature(
         newOfflineTrainPausedRemMs: Long = persistedOfflineTrainingPausedRemainingMs(),
         newOfflineTrainPausedCycleMs: Long = persistedOfflineTrainingPausedCycleElapsedMs(),
         newRecoveryEndsMs: Long = persistedRecoveryEndsAtMs(),
+        newNatureCode: String = companionNature().code,
+        newRelicCode: String = heldRelic().code,
+        newIsShiny: Boolean = isChromaticShiny(),
+        newBadgesMask: Int = earnedSanctumBadgesMask(),
         targetSpeciesOverride: String = speciesId
     ): List<String> {
-        val baseEvolutionForms = unlockedEvolutionFormIds().take(5).map { it.take(40) }
+        val baseEvolutionForms = unlockedEvolutionFormIds().take(4).map { it.take(40) }
         val skillTags = newSkillNodes
             .map { id ->
                 val idx = id.indexOf("_node_")
@@ -218,6 +303,8 @@ data class DigimonCreature(
                 val recSec = newRecoveryEndsMs / 1000L
                 add("rc:$recSec".take(40))
             }
+            val shinyFlag = if (newIsShiny) 1 else 0
+            add("rg:$newNatureCode:$newRelicCode:$shinyFlag:$newBadgesMask".take(40))
         }
         return (baseEvolutionForms + skillTags + metaTags).take(15)
     }
@@ -286,22 +373,23 @@ data class DigimonCreature(
             stage == "Mega" -> 7
             else -> 1
         }
-        val baseStats = attack + defense + speed + wisdom
+        val effectiveStats = effectiveAttack() + effectiveDefense() + effectiveSpeed() + effectiveWisdom()
         val conditionBonus = ((health + stamina + hunger) / 3) + bondLevel
-        return (baseStats * stageMultiplier) + (conditionBonus * 3)
+        val badgeBonus = earnedSanctumBadgesCount() * 25
+        return (effectiveStats * stageMultiplier) + (conditionBonus * 3) + badgeBonus
     }
 
     fun moodLabel(): String = when {
         isRecoveringFrom1Hp() -> "1 HP RECOVERING (${formattedRecoveryRemaining()})"
-        isOfflineTrainingPaused() -> "OFFLINE PAUSED (${formattedOfflineTrainingRemaining()})"
-        isInOfflineTraining() -> "24H AUTO-TRAIN (${formattedOfflineTrainingRemaining()})"
+        isOfflineTrainingPaused() -> "STRIDEWALKER PAUSED (${formattedOfflineTrainingRemaining()})"
+        isInOfflineTraining() -> "24H STRIDEWALKER (${formattedOfflineTrainingRemaining()})"
         health < 35 -> "CRITICAL DAMAGE"
-        hunger < 25 -> "NEEDS FOOD!"
-        isResting -> "CRYO-RESTING (${stamina}%/100%)"
+        hunger < 25 -> "NEEDS NECTAR!"
+        isResting -> "SANCTUARY REST (${stamina}%/100%)"
         stamina <= 20 -> "NEEDS SLEEP!"
         isOnExpedition() -> "ON EXPEDITION"
-        isRareLevel100Form() -> "LVL 100 MYTHIC"
-        canEvolveAnyBranch() -> "EVO READY!"
+        isRareLevel100Form() -> "LVL 100 SOVEREIGN"
+        canEvolveAnyBranch() -> "ASCENSION READY!"
         evolutionProgress >= 100 && currentLevel() < 20 -> "TRAIN TO LVL 20"
         evolutionProgress >= 100 -> "NEED BRANCH STATS"
         health >= 80 && hunger >= 70 && stamina >= 60 -> "PEAK RESONANCE"
@@ -485,6 +573,209 @@ data class StarterDraftChoice(
     val customNickname: String = ""
 )
 
+enum class AcornOrbType(
+    val orbTypeId: String,
+    val displayName: String,
+    val shortLabel: String,
+    val baseCaptureBonusPercent: Int,
+    val specialtyBonusPercent: Int,
+    val costCoins: Int,
+    val craftGildedAcornsCost: Int,
+    val craftRelicShardsCost: Int,
+    val description: String,
+    val colorHex: Long
+) {
+    STANDARD_ACORN_ORB(
+        orbTypeId = "standard_acorn_orb",
+        displayName = "Acorn Orb",
+        shortLabel = "Acorn",
+        baseCaptureBonusPercent = 0,
+        specialtyBonusPercent = 5,
+        costCoins = 2,
+        craftGildedAcornsCost = 1,
+        craftRelicShardsCost = 0,
+        description = "Master Orin's classic handcrafted orb (2 Coins or 1 Gilded Acorn).",
+        colorHex = 0xFFFFB300
+    ),
+    CRIMSON_FAST_ORB(
+        orbTypeId = "crimson_fast_orb",
+        displayName = "Crimson Fast Orb",
+        shortLabel = "Fast (+18%)",
+        baseCaptureBonusPercent = 12,
+        specialtyBonusPercent = 18,
+        costCoins = 5,
+        craftGildedAcornsCost = 2,
+        craftRelicShardsCost = 0,
+        description = "+18% Capture Rate vs Gale, Storm, Pyro, or swift wild companions.",
+        colorHex = 0xFFFF5252
+    ),
+    COBALT_LURE_ORB(
+        orbTypeId = "cobalt_lure_orb",
+        displayName = "Cobalt Lure Orb",
+        shortLabel = "Lure (+18%)",
+        baseCaptureBonusPercent = 12,
+        specialtyBonusPercent = 18,
+        costCoins = 5,
+        craftGildedAcornsCost = 2,
+        craftRelicShardsCost = 0,
+        description = "+18% Capture Rate vs Aqua, Frost, Flora, or Astral wild companions.",
+        colorHex = 0xFF00E5FF
+    ),
+    AUREATE_HEAVY_ORB(
+        orbTypeId = "aureate_heavy_orb",
+        displayName = "Aureate Heavy Orb",
+        shortLabel = "Heavy (+20%)",
+        baseCaptureBonusPercent = 14,
+        specialtyBonusPercent = 20,
+        costCoins = 6,
+        craftGildedAcornsCost = 3,
+        craftRelicShardsCost = 0,
+        description = "+20% Capture Rate vs Stage 2 (Ultimate), Ascended (Mega), Terra, or Metal companions.",
+        colorHex = 0xFFFFD54F
+    ),
+    VERDANT_FRIEND_ORB(
+        orbTypeId = "verdant_friend_orb",
+        displayName = "Verdant Friend Orb",
+        shortLabel = "Friend (+15%)",
+        baseCaptureBonusPercent = 15,
+        specialtyBonusPercent = 15,
+        costCoins = 5,
+        craftGildedAcornsCost = 2,
+        craftRelicShardsCost = 0,
+        description = "+15% Capture Rate on all companions & grants +25 Starting Bond on capture!",
+        colorHex = 0xFF00E676
+    ),
+    LUNAR_MOON_ORB(
+        orbTypeId = "lunar_moon_orb",
+        displayName = "Lunar Moon Orb",
+        shortLabel = "Lunar (+25%)",
+        baseCaptureBonusPercent = 18,
+        specialtyBonusPercent = 25,
+        costCoins = 8,
+        craftGildedAcornsCost = 2,
+        craftRelicShardsCost = 1,
+        description = "+25% Capture Rate vs Rare, Ultra Rare, Sovereign, or ✨ Starlight Chromatic companions!",
+        colorHex = 0xFFA855F7
+    );
+
+    fun effectiveCaptureBonusFor(encounter: WildEncounterState): Int {
+        val attr = encounter.attribute.uppercase()
+        return when (this) {
+            STANDARD_ACORN_ORB -> 0
+            CRIMSON_FAST_ORB -> if (
+                attr.contains("GALE") || attr.contains("STORM") || attr.contains("PYRO") || attr.contains("VOLT")
+            ) specialtyBonusPercent else baseCaptureBonusPercent
+            COBALT_LURE_ORB -> if (
+                attr.contains("AQUA") || attr.contains("FROST") || attr.contains("FLORA") || attr.contains("ASTRAL")
+            ) specialtyBonusPercent else baseCaptureBonusPercent
+            AUREATE_HEAVY_ORB -> if (
+                encounter.stage == "Ultimate" || encounter.stage == "Mega" || attr.contains("TERRA") || attr.contains("METAL")
+            ) specialtyBonusPercent else baseCaptureBonusPercent
+            VERDANT_FRIEND_ORB -> specialtyBonusPercent
+            LUNAR_MOON_ORB -> if (
+                encounter.isChromaticShiny ||
+                encounter.rarityTier == WildRarityTier.RARE ||
+                encounter.rarityTier == WildRarityTier.ULTRA_RARE ||
+                encounter.rarityTier == WildRarityTier.LEGENDARY_APEX
+            ) specialtyBonusPercent else baseCaptureBonusPercent
+        }
+    }
+
+    companion object {
+        fun fromId(raw: String): AcornOrbType =
+            entries.firstOrNull { it.orbTypeId.equals(raw.trim(), ignoreCase = true) } ?: STANDARD_ACORN_ORB
+    }
+}
+
+@Keep
+@IgnoreExtraProperties
+data class AcornOrbInventory(
+    @DocumentId val id: String = "",
+    val userId: String = "",
+    val orbTypeId: String = AcornOrbType.STANDARD_ACORN_ORB.orbTypeId,
+    val orbDisplayName: String = AcornOrbType.STANDARD_ACORN_ORB.displayName,
+    val quantity: Int = 0,
+    val captureBonusPercent: Int = 0,
+    val gildedAcornCount: Int = 0,
+    val relicShardCount: Int = 0,
+    val lastSyncedMs: Long = System.currentTimeMillis(),
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun resolvedOrbType(): AcornOrbType = AcornOrbType.fromId(orbTypeId.ifBlank { id })
+}
+
+@Keep
+@IgnoreExtraProperties
+data class EmeraldReserveEntry(
+    @DocumentId val id: String = "",
+    val userId: String = "",
+    val speciesId: String = "patamon",
+    val speciesName: String = "Sproutling",
+    val nickname: String = "Sproutling",
+    val stage: String = "Rookie",
+    val elementAttribute: String = "Flora",
+    val rarityTier: String = "COMMON",
+    val capturedLevel: Int = 1,
+    val attack: Int = 45,
+    val defense: Int = 38,
+    val speed: Int = 42,
+    val wisdom: Int = 34,
+    val bondLevel: Int = 20,
+    val natureCode: String = "BRAVE",
+    val heldRelicCode: String = "VERDANT_SEED",
+    val chromaticShiny: Boolean = false,
+    val orbUsedId: String = AcornOrbType.STANDARD_ACORN_ORB.orbTypeId,
+    val biomeZone: String = "Emerald Reserve Safari",
+    val inActiveParty: Boolean = false,
+    val capturedAtMs: Long = System.currentTimeMillis(),
+    @ServerTimestamp val createdAt: Timestamp? = null,
+    @ServerTimestamp val updatedAt: Timestamp? = null
+) {
+    fun resolvedRarityTier(): WildRarityTier =
+        WildRarityTier.entries.firstOrNull { it.name == rarityTier } ?: WildRarityTier.COMMON
+
+    fun resolvedNature(): CompanionNature = CompanionNature.fromCode(natureCode)
+
+    fun resolvedRelic(): HeldRelicItem = HeldRelicItem.fromCode(heldRelicCode)
+
+    fun resolvedOrbType(): AcornOrbType = AcornOrbType.fromId(orbUsedId)
+
+    fun toDigimonCreature(): DigimonCreature {
+        val spec = DigimonCatalog.getSpec(speciesId)
+        val shinyFlag = if (chromaticShiny) 1 else 0
+        val bonus = (attack + defense + speed + wisdom - 172).coerceAtLeast(0)
+        val forms = buildList {
+            add(spec.speciesId)
+            if (bonus > 0) add("bn:$bonus")
+            add("rg:${resolvedNature().code}:${resolvedRelic().code}:$shinyFlag:0")
+        }
+        return DigimonCreature(
+            id = id.ifBlank { "reserve_${capturedAtMs}_${spec.speciesId}" },
+            userId = userId,
+            nickname = nickname.ifBlank { spec.speciesName },
+            speciesId = spec.speciesId,
+            speciesName = spec.speciesName,
+            stage = stage.takeIf { it in listOf("Rookie", "Champion", "Ultimate", "Mega") } ?: spec.stage,
+            attribute = spec.attribute,
+            health = 100,
+            stamina = 100,
+            hunger = 90,
+            evolutionProgress = 0,
+            attack = attack,
+            defense = defense,
+            speed = speed,
+            wisdom = wisdom,
+            nonTrainingBonusStats = bonus,
+            bondLevel = bondLevel.coerceIn(0, 100),
+            careMistakes = 0,
+            isResting = false,
+            unlockedForms = forms,
+            lastUpdatedMs = capturedAtMs
+        )
+    }
+}
+
 data class CreatureRaisingProgress(
     val totalAgeMinutes: Long,
     val stageAgeMinutes: Long,
@@ -628,7 +919,7 @@ data class DigimonSpeciesSpec(
     val baseDefense: Int,
     val baseSpeed: Int,
     val baseWisdom: Int,
-    val apexTargetName: String = "WarGreymon",
+    val apexTargetName: String = "Ignisovereign",
     val isRareLevel100Spec: Boolean = false,
     val starterAbilityName: String = "",
     val starterAbilityDescription: String = "",
@@ -637,34 +928,47 @@ data class DigimonSpeciesSpec(
     fun resolvedAbilityName(): String {
         if (starterAbilityName.isNotBlank()) return starterAbilityName
         return when (speciesId) {
-            "agumon" -> "Solar Overdrive"
-            "gabumon" -> "Cryo Fang Reflex"
-            "patamon" -> "Seraphic Pulse"
-            "guilmon" -> "Digital Hazard Fury"
-            "veemon" -> "Courageous Vanguard"
-            "dorumon" -> "X-Antibody Core"
-            "tentomon" -> "Dynamo Carapace"
-            "renamon" -> "Phantom Kitsune Step"
-            "terriermon" -> "Twin Gale Typhoon"
-            "gammamon" -> "Sirius Nova Gene"
-            else -> "$attribute Core Resonance"
+            "patamon", "sproutling" -> "Overgrowth"
+            "agumon", "cinderkit" -> "Kindle Core"
+            "gabumon", "riptide" -> "Rushing Surge"
+            "tentomon", "voltkit" -> "Static Pulse"
+            "renamon", "vulpineon" -> "Resonant Bond"
+            "veemon", "woolspark" -> "Charged Fleece"
+            "gammamon", "ursaflare" -> "Nimble Stride"
+            "guilmon", "duskfang" -> "Searing Fang"
+            "dorumon", "cragscale" -> "Bedrock Grit"
+            "terriermon", "wyrmlet" -> "Mystic Scales"
+            else -> "$attribute Crest Aura"
         }
     }
 
     fun resolvedAbilityDescription(): String {
         if (starterAbilityDescription.isNotBlank()) return starterAbilityDescription
         return when (speciesId) {
-            "agumon" -> "+15% Fire Attack Power & +2 Bonus ATK Synergy on Power Drills"
-            "gabumon" -> "+15% First-Strike Speed & +10% Wild Monster Taming Resonance"
-            "patamon" -> "+20% Celestial Wisdom Sync & +4 Bonus HP Recovery on Rest"
-            "guilmon" -> "+20% Critical Strike Damage in Wild Battles & High Base ATK (62)"
-            "veemon" -> "+15% Evolution Sync Gain & High-Velocity Vanguard Dash (58 SPD)"
-            "dorumon" -> "+15% Chrome Armor Defense (56 DEF) & Reduced Stamina Drain"
-            "tentomon" -> "Bio-Electric Shell reflects shock damage & boosts DEF/WIS Synergy"
-            "renamon" -> "Highest Rookie Speed (60 SPD) with +18% Evasion & Diamond Crit"
-            "terriermon" -> "Balanced Wind Aura granting +15% All-Around Stamina Efficiency"
-            "gammamon" -> "Tri-Horn Dragon DNA granting +15% Dual Attack & Defense Power"
-            else -> "Amplifies $signatureMove damage and $attribute attribute synchronization."
+            "patamon", "sproutling" -> "+15% Flora Power & +4 Bonus HP Recovery on Sanctuary Rest"
+            "agumon", "cinderkit" -> "+15% Pyro Attack Power & +2 Bonus ATK Synergy on Power Courses"
+            "gabumon", "riptide" -> "+15% Aqua Fang Speed & +10% Emerald Reserve Acorn Orb Resonance"
+            "tentomon", "voltkit" -> "High Speed (60 SPD) & +18% Critical Surge on Storm strikes"
+            "renamon", "vulpineon" -> "+15% Bond Evolution Sync towards Solareon & Lunareon"
+            "veemon", "woolspark" -> "Charged Fleece reflects contact shock & boosts DEF/WIS Synergy"
+            "gammamon", "ursaflare" -> "+15% Dual Attack & Defense Power in Sanctuary & Reserve trials"
+            "guilmon", "duskfang" -> "+20% Critical Strike Damage in Wild Battles & High Base ATK (58)"
+            "dorumon", "cragscale" -> "+15% Stone Armor Defense & Reduced Stamina Drain on Courses"
+            "terriermon", "wyrmlet" -> "Balanced Dragon Aura granting +15% All-Around Stamina Efficiency"
+            else -> "Amplifies $signatureMove damage and $attribute elemental synchronization."
+        }
+    }
+
+    fun totalBaseStats(): Int = baseAttack + baseDefense + baseSpeed + baseWisdom
+
+    fun wildRarityTier(): WildRarityTier {
+        val statSum = totalBaseStats()
+        return when {
+            isRareLevel100Spec || (stage == "Mega" && statSum >= 500) -> WildRarityTier.LEGENDARY_APEX
+            stage == "Mega" -> WildRarityTier.ULTRA_RARE
+            stage == "Ultimate" -> WildRarityTier.RARE
+            stage == "Champion" -> WildRarityTier.UNCOMMON
+            else -> WildRarityTier.COMMON
         }
     }
 }
@@ -679,32 +983,32 @@ enum class DrillType(
 ) {
     POWER(
         activityName = "Power Drill",
-        shortTitle = "OMEGA STRIKE",
-        subtitle = "Tap when the plasma ring locks inside the critical overload zone.",
+        shortTitle = "SOLAR BREAKER",
+        subtitle = "Aetherlon Power Course: Strike when the Sunheart ring locks inside the golden crest zone.",
         staminaCost = 18,
         hungerCost = 12,
         primaryStatLabel = "ATK"
     ),
     SPEED(
         activityName = "Speed Drill",
-        shortTitle = "VECTOR REFLEX",
-        subtitle = "Intercept high-velocity holo-nodes before their signal decays.",
+        shortTitle = "GALE HURDLES",
+        subtitle = "Aetherlon Speed Course: Vault high-velocity wind hurdles before the cadence decays.",
         staminaCost = 16,
         hungerCost = 10,
         primaryStatLabel = "SPD"
     ),
     DEFENSE(
         activityName = "Defense Drill",
-        shortTitle = "AEGIS BARRIER",
-        subtitle = "Stabilize the hexagonal shield harmonics under kinetic pressure.",
+        shortTitle = "IRON AEGIS",
+        subtitle = "Aetherlon Stamina Course: Brace the SoulCrest barrier ring under heavy kinetic impact.",
         staminaCost = 18,
         hungerCost = 10,
         primaryStatLabel = "DEF"
     ),
     WISDOM(
         activityName = "Wisdom Drill",
-        shortTitle = "CIPHER MATRIX",
-        subtitle = "Decode binary tactical sequences to boost evolution sync.",
+        shortTitle = "ARCANE RELAY",
+        subtitle = "Aetherlon Skill Course: Harmonize dual-realm runes to boost Crest evolution sync.",
         staminaCost = 14,
         hungerCost = 9,
         primaryStatLabel = "WIS"
@@ -726,8 +1030,8 @@ enum class DigiRation(
     val statBoostSummary: String
 ) {
     FREE_CYBER_WAFER(
-        displayName = "Basic Digi-Wafer (FREE)",
-        description = "FREE Ration: +28 Hunger, +4 HP, 0 Stamina, 0 Stats (Use Cryo-Rest for Stamina)",
+        displayName = "Spiced Nectar Bar (FREE)",
+        description = "FREE Aurelia Treat: +28 Hunger, +4 HP, 0 Stamina, 0 Stats (Use Sanctuary Rest for Stamina)",
         costCoins = 0,
         hungerRestore = 28,
         healthRestore = 4,
@@ -735,8 +1039,8 @@ enum class DigiRation(
         statBoostSummary = "FREE • +28 HUN, +4 HP (0 Stats, 0 STA)"
     ),
     DIGI_MEAT(
-        displayName = "Blaze Sirloin (5 Coins)",
-        description = "Costs 5 DigiCoins: +30 Hunger, +2 ATK, +1 Bond (0 Stamina)",
+        displayName = "Cinder Hearth Roast (5 Coins)",
+        description = "Costs 5 Crest Coins: +30 Hunger, +2 ATK, +1 Bond (0 Stamina)",
         costCoins = 5,
         hungerRestore = 30,
         healthRestore = 4,
@@ -745,8 +1049,8 @@ enum class DigiRation(
         statBoostSummary = "5 COINS • +2 ATK, +30 HUN, +1 BOND"
     ),
     PROTEIN_CHIP(
-        displayName = "Aegis Shellfruit (5 Coins)",
-        description = "Costs 5 DigiCoins: +30 Hunger, +2 DEF, +1 Bond (0 Stamina)",
+        displayName = "Meadow Cream Milk (5 Coins)",
+        description = "Costs 5 Crest Coins: +30 Hunger, +2 DEF, +1 Bond (0 Stamina)",
         costCoins = 5,
         hungerRestore = 30,
         healthRestore = 4,
@@ -755,8 +1059,8 @@ enum class DigiRation(
         statBoostSummary = "5 COINS • +2 DEF, +30 HUN, +1 BOND"
     ),
     STAMINA_BERRY(
-        displayName = "Volt Speedberry (5 Coins)",
-        description = "Costs 5 DigiCoins: +28 Hunger, +2 SPD, +1 Stamina, +1 Bond",
+        displayName = "Gale Sweetberry (5 Coins)",
+        description = "Costs 5 Crest Coins: +28 Hunger, +2 SPD, +1 Stamina, +1 Bond",
         costCoins = 5,
         hungerRestore = 28,
         healthRestore = 2,
@@ -765,8 +1069,8 @@ enum class DigiRation(
         statBoostSummary = "5 COINS • +2 SPD, +28 HUN, +1 STA"
     ),
     GOLDEN_ACORN(
-        displayName = "Cipher Mind-Elixir (5 Coins)",
-        description = "Costs 5 DigiCoins: +32 Hunger, +2 WIS, +8 HP, +2 Bond (0 Stamina)",
+        displayName = "Starlight Ambrosia (5 Coins)",
+        description = "Costs 5 Crest Coins: +32 Hunger, +2 WIS, +8 HP, +2 Bond (0 Stamina)",
         costCoins = 5,
         hungerRestore = 32,
         healthRestore = 8,
@@ -775,8 +1079,8 @@ enum class DigiRation(
         statBoostSummary = "5 COINS • +2 WIS, +32 HUN, +8 HP"
     ),
     ROYAL_FEAST(
-        displayName = "Royal Core Feast (5 Coins)",
-        description = "Costs 5 DigiCoins: +38 Hunger, +1 ALL STATS (ATK/DEF/SPD/WIS), +1 Stamina",
+        displayName = "Sunheart Sacred Feast (5 Coins)",
+        description = "Costs 5 Crest Coins: +38 Hunger, +1 ALL STATS (ATK/DEF/SPD/WIS), +1 Stamina",
         costCoins = 5,
         hungerRestore = 38,
         healthRestore = 10,
@@ -802,7 +1106,7 @@ object DigimonCatalog {
     const val ULTRA_RARE_MONSTER_PART_SELL_COINS = 5
     const val PAID_FEED_COIN_COST = 5
     const val TAMMING_BERRY_COIN_COST = 2
-    const val DIGI_COIN_INTERVAL_SEC = 300 // 5 minutes per +5 DigiCoins
+    const val DIGI_COIN_INTERVAL_SEC = 300 // 5 minutes per +5 Crest Coins
     const val DIGI_COINS_PER_INTERVAL = 5
 
     val level100RareSpeciesIds: Set<String> = setOf(
@@ -817,878 +1121,927 @@ object DigimonCatalog {
     val level100RareBranches: List<EvolutionBranchRequirement> = listOf(
         EvolutionBranchRequirement(
             targetSpeciesId = "omegamon_x",
-            targetSpeciesName = "Omegamon X",
+            targetSpeciesName = "Solphoenix",
             targetStage = "Mega",
-            targetAttribute = "Vaccine",
+            targetAttribute = "Pyro",
             minAttack = 250,
             minDefense = 220,
             minSpeed = 210,
             minBond = 85,
             requiredLevel = 100,
             isRareLevel100Branch = true,
-            branchDescription = "RARE LVL 100 EVOLUTION: Royal Knight X-Antibody fusion wielding All Delete. Requires this specific monster to reach Level 100."
+            branchDescription = "SOVEREIGN LVL 100 ASCENSION: Sunheart Guardian of the Sky Bell Tower wielding Sacred Sunfire. Requires this specific companion to reach Level 100."
         ),
         EvolutionBranchRequirement(
             targetSpeciesId = "alphamon_ouryuken",
-            targetSpeciesName = "Alphamon Ouryuken",
+            targetSpeciesName = "Thalassor",
             targetStage = "Mega",
-            targetAttribute = "Vaccine",
+            targetAttribute = "Aqua",
             minAttack = 240,
             minDefense = 230,
             minWisdom = 210,
             minBond = 85,
             requiredLevel = 100,
             isRareLevel100Branch = true,
-            branchDescription = "RARE LVL 100 EVOLUTION: Lord of the Empty Seat wielding Ultimate-Ouryuken. Requires this specific monster to reach Level 100."
+            branchDescription = "SOVEREIGN LVL 100 ASCENSION: SoulCrest Lord of the Whirlpool Trench wielding Abyssal Gale. Requires this specific companion to reach Level 100."
         ),
         EvolutionBranchRequirement(
             targetSpeciesId = "imperialdramon_pm",
-            targetSpeciesName = "Imperialdramon PM",
+            targetSpeciesName = "Borealis",
             targetStage = "Mega",
-            targetAttribute = "Vaccine",
+            targetAttribute = "Frost",
             minAttack = 250,
             minSpeed = 225,
             minBond = 85,
             requiredLevel = 100,
             isRareLevel100Branch = true,
-            branchDescription = "RARE LVL 100 EVOLUTION: Ancient Paladin Founder wielding the Omni Sword. Requires this specific monster to reach Level 100."
+            branchDescription = "SOVEREIGN LVL 100 ASCENSION: Northern Gale Sovereign purifying the realm with Aurora Crystal. Requires this specific companion to reach Level 100."
         ),
         EvolutionBranchRequirement(
             targetSpeciesId = "susanoomon_zero",
-            targetSpeciesName = "Susanoomon",
+            targetSpeciesName = "Tempestigon",
             targetStage = "Mega",
-            targetAttribute = "Free",
+            targetAttribute = "Storm",
             minAttack = 240,
             minWisdom = 240,
             minBond = 85,
             requiredLevel = 100,
             isRareLevel100Branch = true,
-            branchDescription = "RARE LVL 100 EVOLUTION: Ten Legendary Warriors unified into the Celestial Emperor. Requires this specific monster to reach Level 100."
+            branchDescription = "SOVEREIGN LVL 100 ASCENSION: Stormcloud Sovereign commanding Thunderbolt Roar across Aurelia. Requires this specific companion to reach Level 100."
         ),
         EvolutionBranchRequirement(
             targetSpeciesId = "gallantmon_crimson",
-            targetSpeciesName = "Gallantmon Crimson",
+            targetSpeciesName = "Ignisaur",
             targetStage = "Mega",
-            targetAttribute = "Virus",
+            targetAttribute = "Pyro",
             minAttack = 255,
             minDefense = 220,
             minBond = 85,
             requiredLevel = 100,
             isRareLevel100Branch = true,
-            branchDescription = "RARE LVL 100 EVOLUTION: Crimson Mode overload wielding Gungnir & Blutgang. Requires this specific monster to reach Level 100."
+            branchDescription = "SOVEREIGN LVL 100 ASCENSION: Volcanic Caldera Sovereign unleashing Magma Eruption. Requires this specific companion to reach Level 100."
         ),
         EvolutionBranchRequirement(
             targetSpeciesId = "armageddemon_core",
-            targetSpeciesName = "Armageddemon",
+            targetSpeciesName = "Aetherion",
             targetStage = "Mega",
-            targetAttribute = "Free",
+            targetAttribute = "Astral",
             minAttack = 260,
             minDefense = 235,
             minBond = 85,
             requiredLevel = 100,
             isRareLevel100Branch = true,
-            branchDescription = "RARE LVL 100 EVOLUTION: Apocalypse Super-Titan firing Destiny Destroyer. Requires this specific monster to reach Level 100."
+            branchDescription = "SOVEREIGN LVL 100 ASCENSION: Silver Peak Astral Sovereign wielding Chrono Singularity. Requires this specific companion to reach Level 100."
         )
     )
 
     val allSpecies: Map<String, DigimonSpeciesSpec> = (listOf(
-        // ROOKIES (6 Selectable Starter Lineages)
+        // BASE-STAGE STARTERS (Core Aurelia Lineages)
         DigimonSpeciesSpec(
             speciesId = "agumon",
-            speciesName = "Agumon",
+            speciesName = "Cinderkit",
             stage = "Rookie",
-            attribute = "Vaccine",
-            titleTag = "Flame Reptile • Core Unit 01",
-            signatureMove = "Pepper Breath",
+            attribute = "Pyro",
+            titleTag = "Hearth Quill • Aurelia Starter #02",
+            signatureMove = "Blaze Wheel",
             primaryColorHex = 0xFFFF9800,
             secondaryColorHex = 0xFF00F0FF,
             baseAttack = 52,
             baseDefense = 42,
             baseSpeed = 44,
             baseWisdom = 36,
+            apexTargetName = "Ignisovereign",
+            starterAbilityName = "Kindle Core",
+            starterAbilityDescription = "+15% Pyro Attack Power & +2 Bonus ATK Synergy on Power Courses",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "greymon",
-                    targetSpeciesName = "Greymon",
+                    targetSpeciesName = "Pyroquill",
                     targetStage = "Champion",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Pyro",
                     minAttack = 65,
                     minDefense = 50,
                     minBond = 35,
                     requiredLevel = 20,
-                    branchDescription = "Balanced offensive/defensive discipline requiring LVL 20+ and 100% Sync."
+                    branchDescription = "Balanced Sunheart flame lineage requiring LVL 20+ and 100% Crest Sync."
                 ),
                 EvolutionBranchRequirement(
                     targetSpeciesId = "geogreymon",
-                    targetSpeciesName = "GeoGreymon",
+                    targetSpeciesName = "Flareburst",
                     targetStage = "Champion",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Pyro",
                     minAttack = 72,
                     minSpeed = 58,
                     minBond = 40,
                     requiredLevel = 20,
-                    branchDescription = "High-velocity offensive burst training path requiring LVL 20+."
+                    branchDescription = "High-velocity volcanic striker path requiring LVL 20+."
                 ),
                 EvolutionBranchRequirement(
                     targetSpeciesId = "tyrannomon",
-                    targetSpeciesName = "Tyrannomon",
+                    targetSpeciesName = "Magmasaur",
                     targetStage = "Champion",
-                    targetAttribute = "Data",
+                    targetAttribute = "Terra",
                     minDefense = 55,
                     minBond = 20,
                     requiredLevel = 20,
-                    branchDescription = "Resilient Data-adapted dinosaur path requiring LVL 20+ and DEF 55+."
+                    branchDescription = "Resilient magma-armored saurian path requiring LVL 20+ and DEF 55+."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "gabumon",
-            speciesName = "Gabumon",
+            speciesName = "Riptide",
             stage = "Rookie",
-            attribute = "Data",
-            titleTag = "Pelt Beast • Frost Data Unit",
-            signatureMove = "Blue Blaster",
+            attribute = "Aqua",
+            titleTag = "Tidal Jaw • Aurelia Starter #03",
+            signatureMove = "Tidal Fang",
             primaryColorHex = 0xFF38BDF8,
             secondaryColorHex = 0xFFA855F7,
             baseAttack = 46,
             baseDefense = 44,
             baseSpeed = 54,
             baseWisdom = 44,
-            apexTargetName = "MetalGarurumon",
+            apexTargetName = "Titanorex",
+            starterAbilityName = "Rushing Surge",
+            starterAbilityDescription = "+15% Aqua Fang Speed & +10% Emerald Reserve Acorn Orb Resonance",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "garurumon",
-                    targetSpeciesName = "Garurumon",
+                    targetSpeciesName = "Jawcurrent",
                     targetStage = "Champion",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Aqua",
                     minSpeed = 68,
                     minAttack = 58,
                     minBond = 35,
                     requiredLevel = 20,
-                    branchDescription = "Arctic wolf predator unlocked via LVL 20+, Speed, and Attack drills."
+                    branchDescription = "Silver-tide torrent predator unlocked via LVL 20+, Speed, and Attack courses."
                 ),
                 EvolutionBranchRequirement(
                     targetSpeciesId = "dorugamon",
-                    targetSpeciesName = "Dorugamon",
+                    targetSpeciesName = "Shellcrag",
                     targetStage = "Champion",
-                    targetAttribute = "Data",
+                    targetAttribute = "Terra",
                     minDefense = 62,
                     minWisdom = 56,
                     minBond = 35,
                     requiredLevel = 20,
-                    branchDescription = "Ancient X-Antibody dragon beast requiring LVL 20+, Defense & Wisdom."
+                    branchDescription = "Armored reef-crag guardian requiring LVL 20+, Defense & Skill."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "patamon",
-            speciesName = "Patamon",
+            speciesName = "Sproutling",
             stage = "Rookie",
-            attribute = "Data",
-            titleTag = "Sky Mammal • Holy Pulse Unit",
-            signatureMove = "Boom Bubble",
-            primaryColorHex = 0xFFFBBF24,
-            secondaryColorHex = 0xFF38BDF8,
+            attribute = "Flora",
+            titleTag = "Sunleaf Bud • Aurelia Starter #01",
+            signatureMove = "Verdant Leaf",
+            primaryColorHex = 0xFF10B981,
+            secondaryColorHex = 0xFFFBBF24,
             baseAttack = 40,
-            baseDefense = 42,
-            baseSpeed = 52,
+            baseDefense = 46,
+            baseSpeed = 50,
             baseWisdom = 56,
-            apexTargetName = "Seraphimon",
+            apexTargetName = "Aetherdrake",
+            starterAbilityName = "Overgrowth",
+            starterAbilityDescription = "+15% Flora Power & +4 Bonus HP Recovery on Sanctuary Rest",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "angemon",
-                    targetSpeciesName = "Angemon",
+                    targetSpeciesName = "Blossomane",
                     targetStage = "Champion",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Flora",
                     minWisdom = 70,
                     minBond = 45,
                     requiredLevel = 20,
-                    branchDescription = "Six-winged celestial guardian requiring LVL 20+, Wisdom 70+, and Bond 45+."
+                    branchDescription = "Aromatic sun-blossom guardian requiring LVL 20+, Wisdom 70+, and Bond 45+."
                 ),
                 EvolutionBranchRequirement(
                     targetSpeciesId = "gargomon",
-                    targetSpeciesName = "Gargomon",
+                    targetSpeciesName = "Skyserpent",
                     targetStage = "Champion",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Astral",
                     minAttack = 58,
                     minSpeed = 60,
                     minBond = 30,
                     requiredLevel = 20,
-                    branchDescription = "Heavy twin-gatling brawler unlocked with LVL 20+, Attack & Speed."
+                    branchDescription = "Wind-gliding wyrm lineage unlocked with LVL 20+, Attack & Speed."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "guilmon",
-            speciesName = "Guilmon",
+            speciesName = "Duskfang",
             stage = "Rookie",
-            attribute = "Virus",
-            titleTag = "Digital Hazard • Crimson Unit",
-            signatureMove = "Pyro Sphere",
+            attribute = "Shadow",
+            titleTag = "Ember Hound • Starter #08",
+            signatureMove = "Hellfire Howl",
             primaryColorHex = 0xFFEF4444,
             secondaryColorHex = 0xFFF59E0B,
             baseAttack = 58,
             baseDefense = 40,
             baseSpeed = 48,
             baseWisdom = 34,
-            apexTargetName = "Gallantmon",
+            apexTargetName = "Netherlord",
+            starterAbilityName = "Searing Fang",
+            starterAbilityDescription = "+20% Critical Strike Damage in Wild Battles & High Base ATK (58)",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "growlmon",
-                    targetSpeciesName = "Growlmon",
+                    targetSpeciesName = "Cerberux",
                     targetStage = "Champion",
-                    targetAttribute = "Virus",
+                    targetAttribute = "Shadow",
                     minAttack = 74,
                     minDefense = 52,
                     minBond = 35,
                     requiredLevel = 20,
-                    branchDescription = "Crimson dark dragon forged through LVL 20+, Power & Defense drills."
+                    branchDescription = "Twin-flame shadow hound forged through LVL 20+, Power & Stamina courses."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "veemon",
-            speciesName = "Veemon",
+            speciesName = "Woolspark",
             stage = "Rookie",
-            attribute = "Vaccine",
-            titleTag = "Azure Dragon • Vanguard Unit",
-            signatureMove = "Vee Headbutt",
-            primaryColorHex = 0xFF00F0FF,
-            secondaryColorHex = 0xFFFFB800,
-            baseAttack = 54,
-            baseDefense = 44,
-            baseSpeed = 56,
-            baseWisdom = 38,
-            apexTargetName = "WarGreymon",
+            attribute = "Storm",
+            titleTag = "Beacon Fleece • Starter #06",
+            signatureMove = "Fleece Shock",
+            primaryColorHex = 0xFFFACC15,
+            secondaryColorHex = 0xFF38BDF8,
+            baseAttack = 50,
+            baseDefense = 48,
+            baseSpeed = 52,
+            baseWisdom = 44,
+            apexTargetName = "Ignisovereign",
+            starterAbilityName = "Charged Fleece",
+            starterAbilityDescription = "Charged Fleece reflects contact shock & boosts DEF/WIS Synergy",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "geogreymon",
-                    targetSpeciesName = "GeoGreymon",
+                    targetSpeciesName = "Flareburst",
                     targetStage = "Champion",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Storm",
                     minAttack = 70,
                     minSpeed = 62,
                     minBond = 35,
                     requiredLevel = 20,
-                    branchDescription = "High-velocity dragon striker path unlocked via LVL 20+, Speed & Power drills."
+                    branchDescription = "High-voltage beacon striker unlocked via LVL 20+, Speed & Power courses."
                 ),
                 EvolutionBranchRequirement(
                     targetSpeciesId = "dorugamon",
-                    targetSpeciesName = "Dorugamon",
+                    targetSpeciesName = "Shellcrag",
                     targetStage = "Champion",
-                    targetAttribute = "Data",
+                    targetAttribute = "Terra",
                     minDefense = 60,
                     minAttack = 64,
                     minBond = 35,
                     requiredLevel = 20,
-                    branchDescription = "Armored chrome dragon beast path requiring LVL 20+, Defense & Attack."
+                    branchDescription = "Armored thunder-bastion path requiring LVL 20+, Defense & Attack."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "dorumon",
-            speciesName = "Dorumon",
+            speciesName = "Cragscale",
             stage = "Rookie",
-            attribute = "Data",
-            titleTag = "Chrono Beast • Prototype Unit",
-            signatureMove = "Metal Cannon",
+            attribute = "Terra",
+            titleTag = "Mountain Larva • Starter #09",
+            signatureMove = "Tectonic Crush",
             primaryColorHex = 0xFFA855F7,
             secondaryColorHex = 0xFF38BDF8,
             baseAttack = 50,
-            baseDefense = 52,
-            baseSpeed = 46,
-            baseWisdom = 48,
-            apexTargetName = "MetalGarurumon",
+            baseDefense = 56,
+            baseSpeed = 44,
+            baseWisdom = 46,
+            apexTargetName = "Titanorex",
+            starterAbilityName = "Bedrock Grit",
+            starterAbilityDescription = "+15% Stone Armor Defense & Reduced Stamina Drain on Courses",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "dorugamon",
-                    targetSpeciesName = "Dorugamon",
+                    targetSpeciesName = "Shellcrag",
                     targetStage = "Champion",
-                    targetAttribute = "Data",
+                    targetAttribute = "Terra",
                     minDefense = 66,
                     minWisdom = 58,
                     minBond = 35,
                     requiredLevel = 20,
-                    branchDescription = "Ancient Chrono-Core dragon unlocked via LVL 20+, Defense & Wisdom."
+                    branchDescription = "Iron-shelled mountain carapace unlocked via LVL 20+, Defense & Skill."
                 ),
                 EvolutionBranchRequirement(
                     targetSpeciesId = "garurumon",
-                    targetSpeciesName = "Garurumon",
+                    targetSpeciesName = "Jawcurrent",
                     targetStage = "Champion",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Aqua",
                     minSpeed = 64,
                     minAttack = 60,
                     minBond = 35,
                     requiredLevel = 20,
-                    branchDescription = "Supersonic cyber-wolf evolution path requiring LVL 20+."
+                    branchDescription = "Rushing canyon-fang evolution path requiring LVL 20+."
                 )
             )
         ),
 
-        // CHAMPIONS
+        // CHAMPIONS (STAGE 1 EVOLUTIONS)
         DigimonSpeciesSpec(
             speciesId = "greymon",
-            speciesName = "Greymon",
+            speciesName = "Pyroquill",
             stage = "Champion",
-            attribute = "Vaccine",
-            titleTag = "Armored Saurian • Champion Class",
-            signatureMove = "Nova Blast",
+            attribute = "Pyro",
+            titleTag = "Volcanic Mantle • Champion Class",
+            signatureMove = "Eruption Wheel",
             primaryColorHex = 0xFFFF7043,
             secondaryColorHex = 0xFF00F0FF,
             baseAttack = 95,
             baseDefense = 84,
             baseSpeed = 72,
             baseWisdom = 66,
-            apexTargetName = "WarGreymon",
+            apexTargetName = "Ignisovereign",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "metalgreymon",
-                    targetSpeciesName = "MetalGreymon",
+                    targetSpeciesName = "Vulcanis",
                     targetStage = "Ultimate",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Pyro",
                     minAttack = 130,
                     minDefense = 110,
                     minBond = 60,
                     requiredLevel = 40,
-                    branchDescription = "Cyborg tactical form with Giga Destroyer missile pods (Requires LVL 40+)."
+                    branchDescription = "Blazing caldera colossus with twin magma vents (Requires LVL 40+)."
                 ),
                 EvolutionBranchRequirement(
                     targetSpeciesId = "rizegreymon",
-                    targetSpeciesName = "RizeGreymon",
+                    targetSpeciesName = "Solarflare",
                     targetStage = "Ultimate",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Pyro",
                     minAttack = 135,
                     minSpeed = 105,
                     minBond = 60,
                     requiredLevel = 40,
-                    branchDescription = "Trident Revolver aerial bombardment specialist (Requires LVL 40+)."
+                    branchDescription = "Sunheart sky-artillery specialist (Requires LVL 40+)."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "geogreymon",
-            speciesName = "GeoGreymon",
+            speciesName = "Flareburst",
             stage = "Champion",
-            attribute = "Vaccine",
-            titleTag = "Burst Saurian • Champion Class",
-            signatureMove = "Mega Burst",
+            attribute = "Pyro",
+            titleTag = "Sunburst Striker • Champion Class",
+            signatureMove = "Corona Burst",
             primaryColorHex = 0xFFFF5722,
             secondaryColorHex = 0xFFFFD54F,
             baseAttack = 104,
             baseDefense = 78,
             baseSpeed = 86,
             baseWisdom = 64,
-            apexTargetName = "WarGreymon",
+            apexTargetName = "Ignisovereign",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "rizegreymon",
-                    targetSpeciesName = "RizeGreymon",
+                    targetSpeciesName = "Solarflare",
                     targetStage = "Ultimate",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Pyro",
                     minAttack = 135,
                     minSpeed = 105,
                     minBond = 55,
                     requiredLevel = 40,
-                    branchDescription = "Revolver-equipped supersonic dragon cyborg (Requires LVL 40+)."
+                    branchDescription = "Supersonic solar-flame drake (Requires LVL 40+)."
                 ),
                 EvolutionBranchRequirement(
                     targetSpeciesId = "metalgreymon",
-                    targetSpeciesName = "MetalGreymon",
+                    targetSpeciesName = "Vulcanis",
                     targetStage = "Ultimate",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Pyro",
                     minAttack = 130,
                     minDefense = 105,
                     minBond = 55,
                     requiredLevel = 40,
-                    branchDescription = "Chrome Digizoid armored assault evolution (Requires LVL 40+)."
+                    branchDescription = "Obsidian-armored volcanic evolution (Requires LVL 40+)."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "tyrannomon",
-            speciesName = "Tyrannomon",
+            speciesName = "Magmasaur",
             stage = "Champion",
-            attribute = "Data",
-            titleTag = "Primeval Dino • Champion Class",
-            signatureMove = "Fire Breath",
+            attribute = "Terra",
+            titleTag = "Caldera Dino • Champion Class",
+            signatureMove = "Magma Breath",
             primaryColorHex = 0xFFEF4444,
             secondaryColorHex = 0xFF10B981,
             baseAttack = 92,
             baseDefense = 94,
             baseSpeed = 68,
             baseWisdom = 62,
-            apexTargetName = "WarGreymon",
+            apexTargetName = "Ignisovereign",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "metalgreymon",
-                    targetSpeciesName = "MetalGreymon",
+                    targetSpeciesName = "Vulcanis",
                     targetStage = "Ultimate",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Pyro",
                     minAttack = 128,
                     minDefense = 115,
                     minBond = 55,
                     requiredLevel = 40,
-                    branchDescription = "Mechanized upgrade into Ultimate cyborg form (Requires LVL 40+)."
+                    branchDescription = "Ascends into Ultimate volcanic sovereign (Requires LVL 40+)."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "garurumon",
-            speciesName = "Garurumon",
+            speciesName = "Jawcurrent",
             stage = "Champion",
-            attribute = "Vaccine",
-            titleTag = "Cyber Lupine • Champion Class",
-            signatureMove = "Howling Blaster",
+            attribute = "Aqua",
+            titleTag = "Riptide Maw • Champion Class",
+            signatureMove = "Maelstrom Crunch",
             primaryColorHex = 0xFF38BDF8,
             secondaryColorHex = 0xFFE2E8F0,
             baseAttack = 88,
             baseDefense = 78,
             baseSpeed = 102,
             baseWisdom = 76,
-            apexTargetName = "MetalGarurumon",
+            apexTargetName = "Titanorex",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "weregarurumon",
-                    targetSpeciesName = "WereGarurumon",
+                    targetSpeciesName = "Leviathor",
                     targetStage = "Ultimate",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Aqua",
                     minSpeed = 135,
                     minAttack = 120,
                     minBond = 60,
                     requiredLevel = 40,
-                    branchDescription = "Bipedal commando beast master of Wolf Claw (Requires LVL 40+)."
+                    branchDescription = "Abyssal tide warlord master of Hydro Cleave (Requires LVL 40+)."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "dorugamon",
-            speciesName = "Dorugamon",
+            speciesName = "Shellcrag",
             stage = "Champion",
-            attribute = "Data",
-            titleTag = "Chrome Beast • Champion Class",
-            signatureMove = "Power Metal",
+            attribute = "Terra",
+            titleTag = "Granite Carapace • Champion Class",
+            signatureMove = "Iron Quake",
             primaryColorHex = 0xFFA855F7,
             secondaryColorHex = 0xFF38BDF8,
             baseAttack = 94,
             baseDefense = 92,
             baseSpeed = 80,
             baseWisdom = 84,
-            apexTargetName = "MetalGarurumon",
+            apexTargetName = "Titanorex",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "weregarurumon",
-                    targetSpeciesName = "WereGarurumon",
+                    targetSpeciesName = "Leviathor",
                     targetStage = "Ultimate",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Aqua",
                     minAttack = 122,
                     minDefense = 115,
                     minBond = 55,
                     requiredLevel = 40,
-                    branchDescription = "Tactical close-quarters Ultimate fighter (Requires LVL 40+)."
+                    branchDescription = "Heavy armored Ultimate juggernaut (Requires LVL 40+)."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "angemon",
-            speciesName = "Angemon",
+            speciesName = "Blossomane",
             stage = "Champion",
-            attribute = "Vaccine",
-            titleTag = "Seraphic Vanguard • Champion Class",
-            signatureMove = "Hand of Fate",
+            attribute = "Flora",
+            titleTag = "Sunpetal Guardian • Champion Class",
+            signatureMove = "Solar Petal",
             primaryColorHex = 0xFFFACC15,
-            secondaryColorHex = 0xFF38BDF8,
+            secondaryColorHex = 0xFF10B981,
             baseAttack = 84,
             baseDefense = 82,
             baseSpeed = 90,
             baseWisdom = 106,
-            apexTargetName = "Seraphimon",
+            apexTargetName = "Aetherdrake",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "magnaangemon",
-                    targetSpeciesName = "MagnaAngemon",
+                    targetSpeciesName = "Solarchid",
                     targetStage = "Ultimate",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Flora",
                     minWisdom = 140,
                     minBond = 65,
                     requiredLevel = 40,
-                    branchDescription = "Eight-winged archangel wielding Gate of Destiny (Requires LVL 40+)."
+                    branchDescription = "Radiant canopy sovereign wielding Sunbeam Sanctuary (Requires LVL 40+)."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "gargomon",
-            speciesName = "Gargomon",
+            speciesName = "Skyserpent",
             stage = "Champion",
-            attribute = "Vaccine",
-            titleTag = "Heavy Artillery • Champion Class",
-            signatureMove = "Gargo Laser",
+            attribute = "Astral",
+            titleTag = "Starlight Wyrm • Champion Class",
+            signatureMove = "Astral Twister",
             primaryColorHex = 0xFF10B981,
             secondaryColorHex = 0xFFFBBF24,
             baseAttack = 90,
             baseDefense = 86,
             baseSpeed = 88,
             baseWisdom = 80,
-            apexTargetName = "Seraphimon",
+            apexTargetName = "Aetherdrake",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "magnaangemon",
-                    targetSpeciesName = "MagnaAngemon",
+                    targetSpeciesName = "Solarchid",
                     targetStage = "Ultimate",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Astral",
                     minAttack = 120,
                     minWisdom = 115,
                     minBond = 55,
                     requiredLevel = 40,
-                    branchDescription = "Radiant Ultimate commander (Requires LVL 40+)."
+                    branchDescription = "Celestial Ultimate wyrm commander (Requires LVL 40+)."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "growlmon",
-            speciesName = "Growlmon",
+            speciesName = "Cerberux",
             stage = "Champion",
-            attribute = "Virus",
-            titleTag = "Plasma Blade • Champion Class",
-            signatureMove = "Exhaust Flame",
+            attribute = "Shadow",
+            titleTag = "Nether Hound • Champion Class",
+            signatureMove = "Midnight Scorch",
             primaryColorHex = 0xFFEF4444,
             secondaryColorHex = 0xFFF97316,
             baseAttack = 106,
             baseDefense = 82,
             baseSpeed = 82,
             baseWisdom = 68,
-            apexTargetName = "Gallantmon",
+            apexTargetName = "Netherlord",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "wargrowlmon",
-                    targetSpeciesName = "WarGrowlmon",
+                    targetSpeciesName = "Dreadhound",
                     targetStage = "Ultimate",
-                    targetAttribute = "Virus",
+                    targetAttribute = "Shadow",
                     minAttack = 142,
                     minDefense = 110,
                     minBond = 60,
                     requiredLevel = 40,
-                    branchDescription = "Atomic Blaster cyborg dragon with twin Pendulum Blades (Requires LVL 40+)."
+                    branchDescription = "Armored eclipse hound with twin infernal fangs (Requires LVL 40+)."
                 )
             )
         ),
 
-        // ULTIMATES
+        // ULTIMATES (STAGE 2 EVOLUTIONS)
         DigimonSpeciesSpec(
             speciesId = "metalgreymon",
-            speciesName = "MetalGreymon",
+            speciesName = "Vulcanis",
             stage = "Ultimate",
-            attribute = "Vaccine",
-            titleTag = "Chrome Digizoid • Ultimate Class",
-            signatureMove = "Giga Destroyer",
+            attribute = "Pyro",
+            titleTag = "Caldera Colossus • Ultimate Class",
+            signatureMove = "Magma Overdrive",
             primaryColorHex = 0xFFFF5722,
             secondaryColorHex = 0xFF38BDF8,
             baseAttack = 165,
             baseDefense = 148,
             baseSpeed = 124,
             baseWisdom = 112,
-            apexTargetName = "WarGreymon",
+            apexTargetName = "Ignisovereign",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "wargreymon",
-                    targetSpeciesName = "WarGreymon",
+                    targetSpeciesName = "Ignisovereign",
                     targetStage = "Mega",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Pyro",
                     minAttack = 210,
                     minDefense = 180,
                     minBond = 80,
                     requiredLevel = 65,
-                    branchDescription = "Dramon Killer Mega warrior wielding Terra Force (Requires LVL 65+)."
+                    branchDescription = "Sunheart Pyro Monarch wielding Solar Cataclysm (Requires LVL 65+)."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "rizegreymon",
-            speciesName = "RizeGreymon",
+            speciesName = "Solarflare",
             stage = "Ultimate",
-            attribute = "Vaccine",
-            titleTag = "Solar Cannon • Ultimate Class",
-            signatureMove = "Trident Revolver",
+            attribute = "Pyro",
+            titleTag = "Sunburst Drake • Ultimate Class",
+            signatureMove = "Helios Cannon",
             primaryColorHex = 0xFFF59E0B,
             secondaryColorHex = 0xFFEF4444,
             baseAttack = 172,
             baseDefense = 136,
             baseSpeed = 142,
             baseWisdom = 118,
-            apexTargetName = "WarGreymon",
+            apexTargetName = "Ignisovereign",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "wargreymon",
-                    targetSpeciesName = "WarGreymon",
+                    targetSpeciesName = "Ignisovereign",
                     targetStage = "Mega",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Pyro",
                     minAttack = 210,
                     minSpeed = 175,
                     minBond = 80,
                     requiredLevel = 65,
-                    branchDescription = "Ultimate dragon knight clad in Chrome Digizoid (Requires LVL 65+)."
+                    branchDescription = "Supreme Sunheart dragon monarch clad in golden mail (Requires LVL 65+)."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "weregarurumon",
-            speciesName = "WereGarurumon",
+            speciesName = "Leviathor",
             stage = "Ultimate",
-            attribute = "Vaccine",
-            titleTag = "Assault Striker • Ultimate Class",
-            signatureMove = "Wolf Claw",
+            attribute = "Aqua",
+            titleTag = "Tidal Juggernaut • Ultimate Class",
+            signatureMove = "Abyssal Fang",
             primaryColorHex = 0xFF38BDF8,
             secondaryColorHex = 0xFF8B5CF6,
             baseAttack = 158,
             baseDefense = 134,
             baseSpeed = 174,
             baseWisdom = 124,
-            apexTargetName = "MetalGarurumon",
+            apexTargetName = "Titanorex",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "metalgarurumon",
-                    targetSpeciesName = "MetalGarurumon",
+                    targetSpeciesName = "Titanorex",
                     targetStage = "Mega",
-                    targetAttribute = "Data",
+                    targetAttribute = "Terra",
                     minSpeed = 215,
                     minAttack = 185,
                     minBond = 80,
                     requiredLevel = 65,
-                    branchDescription = "Absolute-zero cybernetic wolf firing Metal Wolf Claw (Requires LVL 65+)."
+                    branchDescription = "Earth-shaking mountain & tide sovereign firing Tectonic Torrent (Requires LVL 65+)."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "magnaangemon",
-            speciesName = "MagnaAngemon",
+            speciesName = "Solarchid",
             stage = "Ultimate",
-            attribute = "Vaccine",
-            titleTag = "Gatekeeper • Ultimate Class",
-            signatureMove = "Gate of Destiny",
+            attribute = "Flora",
+            titleTag = "Sunbloom Sage • Ultimate Class",
+            signatureMove = "Sanctuary Bloom",
             primaryColorHex = 0xFFFACC15,
             secondaryColorHex = 0xFFA855F7,
             baseAttack = 146,
             baseDefense = 142,
             baseSpeed = 152,
             baseWisdom = 182,
-            apexTargetName = "Seraphimon",
+            apexTargetName = "Aetherdrake",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "seraphimon",
-                    targetSpeciesName = "Seraphimon",
+                    targetSpeciesName = "Aetherdrake",
                     targetStage = "Mega",
-                    targetAttribute = "Vaccine",
+                    targetAttribute = "Astral",
                     minWisdom = 220,
                     minBond = 85,
                     requiredLevel = 65,
-                    branchDescription = "Ten-winged celestial sovereign casting Strike of the Seven Stars (Requires LVL 65+)."
+                    branchDescription = "Winged celestial dragon sovereign casting Starlight Tempest (Requires LVL 65+)."
                 )
             )
         ),
         DigimonSpeciesSpec(
             speciesId = "wargrowlmon",
-            speciesName = "WarGrowlmon",
+            speciesName = "Dreadhound",
             stage = "Ultimate",
-            attribute = "Virus",
-            titleTag = "Atomic Buster • Ultimate Class",
-            signatureMove = "Atomic Blaster",
+            attribute = "Shadow",
+            titleTag = "Eclipse Hound • Ultimate Class",
+            signatureMove = "Nether Flare",
             primaryColorHex = 0xFFEF4444,
             secondaryColorHex = 0xFF00F0FF,
             baseAttack = 178,
             baseDefense = 148,
             baseSpeed = 136,
             baseWisdom = 118,
-            apexTargetName = "Gallantmon",
+            apexTargetName = "Netherlord",
             evolutionBranches = listOf(
                 EvolutionBranchRequirement(
                     targetSpeciesId = "gallantmon",
-                    targetSpeciesName = "Gallantmon",
+                    targetSpeciesName = "Netherlord",
                     targetStage = "Mega",
-                    targetAttribute = "Virus",
+                    targetAttribute = "Shadow",
                     minAttack = 215,
                     minDefense = 180,
                     minBond = 80,
                     requiredLevel = 65,
-                    branchDescription = "Royal Knight wielding Sacred Lance Gram and Shield Aegis (Requires LVL 65+)."
+                    branchDescription = "Dusk-crowned sovereign wielding Crimson Eclipse Lance (Requires LVL 65+)."
                 )
             )
         ),
 
-        // MEGAS (Can evolve into the 6 Rare Level-100 Monsters ONLY when THIS specific monster reaches Level 100)
+        // MEGAS (Can ascend into the 6 Level-100 Sovereign Legendaries ONLY when THIS specific companion reaches Level 100)
         DigimonSpeciesSpec(
             speciesId = "wargreymon",
-            speciesName = "WarGreymon",
+            speciesName = "Ignisovereign",
             stage = "Mega",
-            attribute = "Vaccine",
-            titleTag = "Dragon Sovereign • Mega Apex",
-            signatureMove = "Terra Force",
+            attribute = "Pyro",
+            titleTag = "Sunheart Monarch • Mega Apex",
+            signatureMove = "Solar Cataclysm",
             primaryColorHex = 0xFFFFB800,
             secondaryColorHex = 0xFFEF4444,
             baseAttack = 260,
             baseDefense = 230,
             baseSpeed = 210,
             baseWisdom = 185,
-            apexTargetName = "Omegamon X (Lvl 100)",
+            apexTargetName = "Solphoenix (Lvl 100)",
             evolutionBranches = level100RareBranches
         ),
         DigimonSpeciesSpec(
             speciesId = "metalgarurumon",
-            speciesName = "MetalGarurumon",
+            speciesName = "Titanorex",
             stage = "Mega",
-            attribute = "Data",
-            titleTag = "Cryo Artillery • Mega Apex",
-            signatureMove = "Metal Wolf Claw",
+            attribute = "Terra",
+            titleTag = "SoulCrest Colossus • Mega Apex",
+            signatureMove = "Tectonic Torrent",
             primaryColorHex = 0xFF00F0FF,
             secondaryColorHex = 0xFF3B82F6,
             baseAttack = 235,
             baseDefense = 215,
             baseSpeed = 268,
             baseWisdom = 205,
-            apexTargetName = "Omegamon X (Lvl 100)",
+            apexTargetName = "Thalassor (Lvl 100)",
             evolutionBranches = level100RareBranches
         ),
         DigimonSpeciesSpec(
             speciesId = "seraphimon",
-            speciesName = "Seraphimon",
+            speciesName = "Aetherdrake",
             stage = "Mega",
-            attribute = "Vaccine",
-            titleTag = "Celestial Apex • Mega Apex",
-            signatureMove = "Seven Heavens",
+            attribute = "Astral",
+            titleTag = "Sky Dragon Sovereign • Mega Apex",
+            signatureMove = "Starlight Tempest",
             primaryColorHex = 0xFFFDE047,
             secondaryColorHex = 0xFF00F0FF,
             baseAttack = 220,
             baseDefense = 225,
             baseSpeed = 230,
             baseWisdom = 275,
-            apexTargetName = "Susanoomon (Lvl 100)",
+            apexTargetName = "Tempestigon (Lvl 100)",
             evolutionBranches = level100RareBranches
         ),
         DigimonSpeciesSpec(
             speciesId = "gallantmon",
-            speciesName = "Gallantmon",
+            speciesName = "Netherlord",
             stage = "Mega",
-            attribute = "Virus",
-            titleTag = "Royal Knight • Mega Apex",
-            signatureMove = "Lightning Joust",
+            attribute = "Shadow",
+            titleTag = "Eclipse Knight • Mega Apex",
+            signatureMove = "Crimson Eclipse",
             primaryColorHex = 0xFFEF4444,
             secondaryColorHex = 0xFFFFB800,
             baseAttack = 268,
             baseDefense = 238,
             baseSpeed = 225,
             baseWisdom = 200,
-            apexTargetName = "Gallantmon Crimson (Lvl 100)",
+            apexTargetName = "Ignisaur (Lvl 100)",
             evolutionBranches = level100RareBranches
         ),
 
-        // 6 NEW RARE LEVEL-100 MYTHIC MONSTERS (Only obtainable by evolving a monster that has personally reached Level 100)
+        // 6 LEVEL-100 SOVEREIGN LEGENDARIES (Only obtainable by ascending a companion that has personally reached Level 100)
         DigimonSpeciesSpec(
             speciesId = "omegamon_x",
-            speciesName = "Omegamon X",
+            speciesName = "Solphoenix",
             stage = "Mega",
-            attribute = "Vaccine",
-            titleTag = "Rare Lvl 100 Mythic • Royal Fusion",
-            signatureMove = "All Delete",
-            primaryColorHex = 0xFF00F0FF,
-            secondaryColorHex = 0xFFFFD700,
+            attribute = "Pyro",
+            titleTag = "Lvl 100 Sovereign • Sunheart Bell Guardian",
+            signatureMove = "Sacred Sunfire",
+            primaryColorHex = 0xFFFFB800,
+            secondaryColorHex = 0xFFEF4444,
             baseAttack = 350,
             baseDefense = 320,
             baseSpeed = 335,
             baseWisdom = 315,
-            apexTargetName = "Omegamon X",
+            apexTargetName = "Solphoenix",
             isRareLevel100Spec = true,
             evolutionBranches = emptyList()
         ),
         DigimonSpeciesSpec(
             speciesId = "alphamon_ouryuken",
-            speciesName = "Alphamon Ouryuken",
+            speciesName = "Thalassor",
             stage = "Mega",
-            attribute = "Vaccine",
-            titleTag = "Rare Lvl 100 Mythic • Chrono Sovereign",
-            signatureMove = "Digitalize of Soul",
-            primaryColorHex = 0xFFFFD700,
+            attribute = "Aqua",
+            titleTag = "Lvl 100 Sovereign • SoulCrest Tide Guardian",
+            signatureMove = "Abyssal Gale",
+            primaryColorHex = 0xFF38BDF8,
             secondaryColorHex = 0xFFA855F7,
             baseAttack = 345,
             baseDefense = 340,
             baseSpeed = 315,
             baseWisdom = 335,
-            apexTargetName = "Alphamon Ouryuken",
+            apexTargetName = "Thalassor",
             isRareLevel100Spec = true,
             evolutionBranches = emptyList()
         ),
         DigimonSpeciesSpec(
             speciesId = "imperialdramon_pm",
-            speciesName = "Imperialdramon PM",
+            speciesName = "Borealis",
             stage = "Mega",
-            attribute = "Vaccine",
-            titleTag = "Rare Lvl 100 Mythic • Paladin Founder",
-            signatureMove = "Omni Sword",
-            primaryColorHex = 0xFF38BDF8,
+            attribute = "Frost",
+            titleTag = "Lvl 100 Sovereign • Northern Gale Beast",
+            signatureMove = "Aurora Crystal",
+            primaryColorHex = 0xFF00F0FF,
             secondaryColorHex = 0xFFFDE047,
             baseAttack = 355,
             baseDefense = 315,
             baseSpeed = 340,
             baseWisdom = 310,
-            apexTargetName = "Imperialdramon PM",
+            apexTargetName = "Borealis",
             isRareLevel100Spec = true,
             evolutionBranches = emptyList()
         ),
         DigimonSpeciesSpec(
             speciesId = "susanoomon_zero",
-            speciesName = "Susanoomon",
+            speciesName = "Tempestigon",
             stage = "Mega",
-            attribute = "Free",
-            titleTag = "Rare Lvl 100 Mythic • Celestial Emperor",
-            signatureMove = "Celestial Blade",
+            attribute = "Storm",
+            titleTag = "Lvl 100 Sovereign • Stormcloud Beast",
+            signatureMove = "Thunderbolt Roar",
             primaryColorHex = 0xFFFFB800,
-            secondaryColorHex = 0xFFEF4444,
+            secondaryColorHex = 0xFF38BDF8,
             baseAttack = 350,
             baseDefense = 325,
             baseSpeed = 320,
             baseWisdom = 355,
-            apexTargetName = "Susanoomon",
+            apexTargetName = "Tempestigon",
             isRareLevel100Spec = true,
             evolutionBranches = emptyList()
         ),
         DigimonSpeciesSpec(
             speciesId = "gallantmon_crimson",
-            speciesName = "Gallantmon Crimson",
+            speciesName = "Ignisaur",
             stage = "Mega",
-            attribute = "Virus",
-            titleTag = "Rare Lvl 100 Mythic • Crimson Quo Vadis",
-            signatureMove = "Quo Vadis",
+            attribute = "Pyro",
+            titleTag = "Lvl 100 Sovereign • Caldera Beast",
+            signatureMove = "Magma Eruption",
             primaryColorHex = 0xFFEF4444,
             secondaryColorHex = 0xFFFFD700,
             baseAttack = 368,
             baseDefense = 318,
             baseSpeed = 335,
             baseWisdom = 310,
-            apexTargetName = "Gallantmon Crimson",
+            apexTargetName = "Ignisaur",
             isRareLevel100Spec = true,
             evolutionBranches = emptyList()
         ),
         DigimonSpeciesSpec(
             speciesId = "armageddemon_core",
-            speciesName = "Armageddemon",
+            speciesName = "Aetherion",
             stage = "Mega",
-            attribute = "Free",
-            titleTag = "Rare Lvl 100 Mythic • Apocalypse Titan",
-            signatureMove = "Destiny Destroyer",
+            attribute = "Astral",
+            titleTag = "Lvl 100 Sovereign • Silver Peak Apex",
+            signatureMove = "Chrono Singularity",
             primaryColorHex = 0xFFA855F7,
             secondaryColorHex = 0xFFEF4444,
             baseAttack = 380,
             baseDefense = 350,
             baseSpeed = 295,
             baseWisdom = 300,
-            apexTargetName = "Armageddemon",
+            apexTargetName = "Aetherion",
             isRareLevel100Spec = true,
             evolutionBranches = emptyList()
         )
     ) + DigiWorldExpansionCatalog.extra71SpeciesSpecs).associateBy { it.speciesId }
+
+    private val speciesAliases: Map<String, String> = mapOf(
+        "sproutling" to "patamon",
+        "cinderkit" to "agumon",
+        "riptide" to "gabumon",
+        "voltkit" to "tentomon",
+        "vulpineon" to "renamon",
+        "woolspark" to "veemon",
+        "ursaflare" to "gammamon",
+        "duskfang" to "guilmon",
+        "cragscale" to "dorumon",
+        "wyrmlet" to "terriermon",
+        "solphoenix" to "omegamon_x",
+        "thalassor" to "alphamon_ouryuken",
+        "borealis" to "imperialdramon_pm",
+        "tempestigon" to "susanoomon_zero",
+        "ignisaur" to "gallantmon_crimson",
+        "aetherion" to "armageddemon_core"
+    )
 
     val allSpeciesSpecs: List<DigimonSpeciesSpec>
         get() = allSpecies.values.toList()
 
     val wildTamableSpecs: List<DigimonSpeciesSpec>
         get() = allSpeciesSpecs.filter { !it.isRareLevel100Spec }
+
+    fun rollWeightedWildMonster(random: kotlin.random.Random = kotlin.random.Random.Default): DigimonSpeciesSpec {
+        val pool = wildTamableSpecs
+        val roll = random.nextInt(100)
+        val targetTier = when {
+            roll < 60 -> WildRarityTier.COMMON          // 60% Common (Base Stage)
+            roll < 84 -> WildRarityTier.UNCOMMON        // 24% Uncommon (Stage 1)
+            roll < 95 -> WildRarityTier.RARE            // 11% Rare (Stage 2)
+            roll < 99 -> WildRarityTier.ULTRA_RARE      // 4% Ultra Rare (Ascended)
+            else -> WildRarityTier.LEGENDARY_APEX       // 1% Legendary Apex (Sovereign)
+        }
+        val tierCandidates = pool.filter { it.wildRarityTier() == targetTier }
+        val candidates = tierCandidates.ifEmpty {
+            pool.filter { it.stage == "Rookie" }.ifEmpty { pool }
+        }
+        return candidates[random.nextInt(candidates.size)]
+    }
 
     val allExpeditions: List<ExpeditionSpec>
         get() = DigiWorldExpansionCatalog.allExpeditions
@@ -1703,11 +2056,13 @@ object DigimonCatalog {
         getSkillTree(speciesId)
 
     fun getSpec(speciesId: String): DigimonSpeciesSpec {
-        return allSpecies[speciesId] ?: allSpecies.getValue("agumon")
+        val clean = speciesId.trim().lowercase()
+        val resolvedId = speciesAliases[clean] ?: clean
+        return allSpecies[resolvedId] ?: allSpecies[speciesId] ?: allSpecies.getValue("patamon")
     }
 
     fun getMonsterImageRes(speciesId: String): Int {
-        val id = speciesId.lowercase()
+        val id = (speciesAliases[speciesId.lowercase()] ?: speciesId.lowercase())
         return when {
             id in level100RareSpeciesIds ->
                 com.example.R.drawable.img_monster_mythic_apex
@@ -1770,39 +2125,41 @@ object DigimonCatalog {
     }
 
     fun isRookieStarterAllowed(speciesId: String): Boolean {
-        val spec = allSpecies[speciesId] ?: return false
+        val clean = speciesAliases[speciesId.trim().lowercase()] ?: speciesId
+        val spec = allSpecies[clean] ?: return false
         return spec.stage == "Rookie" && !spec.isRareLevel100Spec
     }
 
     fun requireRookieStarterSpec(speciesId: String): DigimonSpeciesSpec {
-        val candidate = allSpecies[speciesId]
+        val clean = speciesAliases[speciesId.trim().lowercase()] ?: speciesId
+        val candidate = allSpecies[clean]
         return if (candidate != null && candidate.stage == "Rookie" && !candidate.isRareLevel100Spec) {
             candidate
         } else {
-            allSpecies.getValue("agumon")
+            allSpecies.getValue("patamon")
         }
     }
 
-    // 10 Distinct Rookie Starter Choices — each with unique Base Stats (ATK/DEF/SPD/WIS), Signature Move, and Passive Ability
+    // 10 Distinct Base-Stage Starters led by the Aurelia Trio (Sproutling, Cinderkit, Riptide)
     val starterSpecs: List<DigimonSpeciesSpec>
         get() = listOf(
-            getSpec("agumon"),
-            getSpec("gabumon"),
-            getSpec("patamon"),
-            getSpec("guilmon"),
-            getSpec("veemon"),
-            getSpec("dorumon"),
-            getSpec("tentomon"),
-            getSpec("renamon"),
-            getSpec("terriermon"),
-            getSpec("gammamon")
+            getSpec("patamon"),    // #1 Sproutling (Flora • Overgrowth)
+            getSpec("agumon"),     // #2 Cinderkit (Pyro • Kindle Core)
+            getSpec("gabumon"),    // #3 Riptide (Aqua • Rushing Surge)
+            getSpec("tentomon"),   // #4 Voltkit (Storm • Static Pulse)
+            getSpec("renamon"),    // #5 Vulpineon (Aether • Resonant Bond)
+            getSpec("veemon"),     // #6 Woolspark (Storm • Charged Fleece)
+            getSpec("gammamon"),   // #7 Ursaflare (Terra • Nimble Stride)
+            getSpec("guilmon"),    // #8 Duskfang (Shadow • Searing Fang)
+            getSpec("dorumon"),    // #9 Cragscale (Terra • Bedrock Grit)
+            getSpec("terriermon")  // #10 Wyrmlet (Astral • Mystic Scales)
         ).filter { it.stage == "Rookie" && !it.isRareLevel100Spec }
 
     val allRookieSpecs: List<DigimonSpeciesSpec>
         get() {
             val coreIds = listOf(
-                "agumon", "gabumon", "patamon", "guilmon", "veemon",
-                "dorumon", "tentomon", "renamon", "terriermon", "gammamon"
+                "patamon", "agumon", "gabumon", "tentomon", "renamon",
+                "veemon", "gammamon", "guilmon", "dorumon", "terriermon"
             )
             val core = coreIds.mapNotNull { allSpecies[it] }.filter { it.stage == "Rookie" && !it.isRareLevel100Spec }
             val extra = allSpeciesSpecs.filter { it.stage == "Rookie" && !it.isRareLevel100Spec && it.speciesId !in coreIds }
@@ -1811,4 +2168,64 @@ object DigimonCatalog {
 
     val level100RareSpecs: List<DigimonSpeciesSpec>
         get() = level100RareSpeciesIds.map { getSpec(it) }
+
+    fun getFourBattleMoves(creature: DigimonCreature): List<BattleMoveSpec> {
+        val spec = getSpec(creature.speciesId)
+        val elem = spec.attribute
+        val statusMoveTitle = when {
+            elem.contains("Flora", ignoreCase = true) || elem.contains("Astral", ignoreCase = true) ->
+                "Slumber Spore (💤 Sleep)"
+            elem.contains("Storm", ignoreCase = true) || elem.contains("Gale", ignoreCase = true) || elem.contains("Metal", ignoreCase = true) ->
+                "Static Pulse (⚡ Paralyze)"
+            else ->
+                "Ember Sear (🔥 Burn)"
+        }
+        val statusEffectDesc = when {
+            statusMoveTitle.contains("Sleep") -> "Inflicts 💤 ASLEEP (+25% Acorn Orb Capture Rate) & light chip"
+            statusMoveTitle.contains("Paralyze") -> "Inflicts ⚡ PARALYZED (+18% Acorn Orb Capture Rate) & stuns"
+            else -> "Inflicts 🔥 SEARED (+12% Acorn Orb Capture Rate) & weakens guard"
+        }
+        return listOf(
+            BattleMoveSpec(
+                moveIndex = 0,
+                moveName = spec.signatureMove,
+                elementAttribute = elem,
+                category = BattleMoveCategory.ELEMENTAL_STRIKE,
+                power = 85,
+                accuracy = 100,
+                maxPp = 15,
+                effectDescription = "STAB $elem Signature Strike (2.0x vs ${ElementalMatchupEngine.strongAgainstSummary(elem)})"
+            ),
+            BattleMoveSpec(
+                moveIndex = 1,
+                moveName = "Mercy Slash",
+                elementAttribute = "Neutral",
+                category = BattleMoveCategory.MERCY_SUBDUE,
+                power = 55,
+                accuracy = 100,
+                maxPp = 25,
+                effectDescription = "Subdue Strike: NEVER drops Wild HP below 1% (+35% Red-HP Capture Bonus!)"
+            ),
+            BattleMoveSpec(
+                moveIndex = 2,
+                moveName = statusMoveTitle,
+                elementAttribute = elem,
+                category = BattleMoveCategory.STATUS_WAVE,
+                power = 20,
+                accuracy = 95,
+                maxPp = 15,
+                effectDescription = statusEffectDesc
+            ),
+            BattleMoveSpec(
+                moveIndex = 3,
+                moveName = "Crest Resonance",
+                elementAttribute = "Aether",
+                category = BattleMoveCategory.CREST_SURGE,
+                power = 40,
+                accuracy = 100,
+                maxPp = 10,
+                effectDescription = "Restores +18 HP to ${creature.nickname}, boosts Bond, & strikes with Aether wave"
+            )
+        )
+    }
 }

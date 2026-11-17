@@ -1,10 +1,12 @@
-# Digi Verse (v32.0)
+# Digi Verse (v33.0)
 
 **Digi Verse** is an Android virtual Digital Monster raising, training, evolution, and real-time multiplayer tamer RPG built with Kotlin, Jetpack Compose (Material 3), Glance AppWidgets, and Firebase Firestore.
 
 ## Key Features
-- **10 Rookie Digital Monster Starters with Unique Stats & Abilities**:
-  - New and reset tamers choose 3 **Rookie-stage (LVL 1)** starter Digital Monsters from **10 distinct choices** (`Agumon`, `Gabumon`, `Patamon`, `Guilmon`, `Veemon`, `Dorumon`, `Tentomon`, `Renamon`, `Terriermon`, `Gammamon`), each with customized base stats (`ATK`, `DEF`, `SPD`, `WIS`), a Signature Skill, and a unique passive Starter Ability.
+- **10 Rookie Digital Monster Starters with Mobile-Responsive 2-Column Grid**:
+  - New and reset tamers choose 1 **Rookie-stage (LVL 1)** starter Digital Monster from **10 distinct choices** (`Agumon`, `Gabumon`, `Patamon`, `Guilmon`, `Veemon`, `Dorumon`, `Tentomon`, `Renamon`, `Terriermon`, `Gammamon`), each with customized base stats (`ATK`, `DEF`, `SPD`, `WIS`), a Signature Skill, and a unique passive Starter Ability.
+- **5-Tier Wild Monster Rarity & Scaling Capture Difficulty**:
+  - Wild encounters follow weighted rarity spawn tiers (`60% Common Rookie`, `24% Uncommon Champion`, `11% Rare Ultimate`, `4% Ultra Rare Mega`, `1% Legendary Apex`), where rarer monsters have significantly lower base tame rates, smaller berry progress gains, and can even shake off tame progress on resistance.
 - **200 DigiCoins Starting Balance (New Game Only)**:
   - Every brand-new game or full account reset begins with **200 DigiCoins** so new tamers can immediately train, buy rations, or activate 24-Hour Offline Auto-Training.
 - **Pausable 24-Hour Offline Auto-Training & Normal Drill Lockout**:
@@ -23,5 +25,5 @@
 
 ## Building & Deploying to GitHub
 1. **Push from Google AI Studio**: Use the **Push to GitHub** button in the top-right toolbar / Settings menu of Google AI Studio to sync this codebase directly to your GitHub repository.
-2. **Automatic GitHub Actions APK Build**: Every push to `main` or `master` runs `.github/workflows/android-build.yml` and publishes `DigiVerse-v32-debug-apk` under the **Actions** tab on GitHub.
+2. **Automatic GitHub Actions APK Build**: Every push to `main` or `master` runs `.github/workflows/android-build.yml` and publishes `DigiVerse-v33-debug-apk` under the **Actions** tab on GitHub.
 3. **Direct APK Download in AI Studio**: Open the **Settings / Export** menu in Google AI Studio to download the compiled APK/AAB or project ZIP directly.
