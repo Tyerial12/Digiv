@@ -1740,6 +1740,16 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
         p.edit().putString("emerald_reserve_$userId", arr.toString()).apply()
     }
 
+    fun saveLongPlayRpgJson(userId: String, keySuffix: String, rawJson: String) {
+        val p = prefs() ?: return
+        p.edit().putString("rpg_${keySuffix}_$userId", rawJson).apply()
+    }
+
+    fun loadLongPlayRpgJson(userId: String, keySuffix: String): String? {
+        val p = prefs() ?: return null
+        return p.getString("rpg_${keySuffix}_$userId", null)
+    }
+
     fun clearLocalUserProgress(userId: String) {
         val p = prefs() ?: return
         p.edit()
@@ -1754,6 +1764,12 @@ class DigiPulseRepository(private val db: FirebaseFirestore) {
             .remove("daily_date_$userId")
             .remove("daily_summary_$userId")
             .remove("local_creatures_$userId")
+            .remove("rpg_daycare_$userId")
+            .remove("rpg_frontier_$userId")
+            .remove("rpg_quests_$userId")
+            .remove("rpg_pass_$userId")
+            .remove("rpg_relic_forge_$userId")
+            .remove("rpg_runes_$userId")
             .apply()
     }
 

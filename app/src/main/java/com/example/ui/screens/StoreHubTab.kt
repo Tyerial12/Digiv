@@ -73,6 +73,10 @@ fun StoreHubTab(
     onSellAllParts: () -> Unit = {},
     onFeedCreatureFromBag: (DigiRation) -> Unit,
     onOpenWildTamingModal: () -> Unit,
+    rpgUiState: com.example.viewmodel.DashboardUiState? = null,
+    onEquipRelic: (com.example.data.model.HeldRelicItem) -> Unit = {},
+    onUpgradeRelic: (com.example.data.model.HeldRelicItem) -> Unit = {},
+    onCraftOrSocketRune: (com.example.data.model.HeldRelicItem, Int, com.example.data.model.ResonanceRune) -> Unit = { _, _, _ -> },
     modifier: Modifier = Modifier
 ) {
     val nextCoinMins = nextDigiCoinTickSec / 60
@@ -104,9 +108,18 @@ fun StoreHubTab(
                 modifier = Modifier.size(26.dp)
             )
             Text(
-                text = "SUNSPIRE GRAND BAZAAR // NECTAR, ORBS & RELICS",
+                text = "RELIC FORGE & SUNSPIRE GRAND BAZAAR",
                 style = MaterialTheme.typography.headlineLarge,
                 color = EvolutionGoldSecondary
+            )
+        }
+
+        if (rpgUiState != null) {
+            RelicCraftingForgeCard(
+                uiState = rpgUiState,
+                onEquipRelic = onEquipRelic,
+                onUpgradeRelic = onUpgradeRelic,
+                onCraftOrSocketRune = onCraftOrSocketRune
             )
         }
 

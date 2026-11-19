@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.model.AcornOrbInventory
 import com.example.data.model.AcornOrbType
 import com.example.data.model.ChatMessage
+import com.example.data.model.DaycareBreedingState
 import com.example.data.model.DigiRation
 import com.example.data.model.DigimonCatalog
 import com.example.data.model.DigimonCreature
@@ -13,16 +14,31 @@ import com.example.data.model.DrillType
 import com.example.data.model.EmeraldReserveEntry
 import com.example.data.model.EvolutionBranchRequirement
 import com.example.data.model.ExpeditionSpec
+import com.example.data.model.ForgedRelicUpgradeState
 import com.example.data.model.FriendConnection
+import com.example.data.model.FrontierBpShopItem
+import com.example.data.model.FrontierTowerState
+import com.example.data.model.HeldRelicItem
 import com.example.data.model.LeaderboardEntry
+import com.example.data.model.LongPlayRpgCatalog
 import com.example.data.model.MonsterSkillNode
 import com.example.data.model.PetNotification
+import com.example.data.model.ResonanceRune
+import com.example.data.model.SanctumLeaderSpec
+import com.example.data.model.TamerPassState
+import com.example.data.model.TamerQuestItem
+import com.example.data.model.TamerQuestType
 import com.example.data.model.TradeListing
 import com.example.data.model.TrainingLogEntry
+import com.example.data.model.TurnBasedBattleMode
+import com.example.data.model.TurnBasedBattleState
 import com.example.data.model.WildEncounterState
+import com.example.data.model.WorldRegionBiome
 import com.example.data.repository.DigiPulseRepository
 import com.google.firebase.Timestamp
 import com.google.firebase.firestore.FirebaseFirestoreException
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlin.random.Random
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -93,11 +109,29 @@ data class DashboardUiState(
     val dailyLoginClaimedToday: Boolean = false,
     val dailyLoginStreakDays: Int = 1,
     val lastDailyLoginRewardText: String? = null,
+    val selectedWorldRegionId: String = "aurelia_meadows",
+    val turnBasedBattle: TurnBasedBattleState? = null,
+    val daycareState: DaycareBreedingState = DaycareBreedingState(),
+    val frontierTowerState: FrontierTowerState = FrontierTowerState(),
+    val tamerQuests: List<TamerQuestItem> = LongPlayRpgCatalog.defaultTamerQuests(),
+    val tamerPassState: TamerPassState = TamerPassState(),
+    val forgedRelics: Map<String, ForgedRelicUpgradeState> = emptyMap(),
+    val unlockedRuneCodes: Set<String> = setOf(ResonanceRune.SOLAR_CRIT.runeCode, ResonanceRune.GALE_SWIFTNESS.runeCode),
     val errorMessage: String? = null,
     val isGoogleSignedIn: Boolean = true
 ) {
     val activeCreature: DigimonCreature?
         get() = creatures.firstOrNull { it.id == activeCreatureId } ?: creatures.firstOrNull()
+
+    val selectedWorldRegion: WorldRegionBiome
+        get() = LongPlayRpgCatalog.worldRegions.firstOrNull { it.regionId == selectedWorldRegionId }
+            ?: LongPlayRpgCatalog.worldRegions.first()
+
+    val claimableQuestCount: Int
+        get() = tamerQuests.count { it.isCompleted && !it.isClaimed }
+
+    fun getForgedRelicState(relic: HeldRelicItem): ForgedRelicUpgradeState =
+        forgedRelics[relic.code] ?: ForgedRelicUpgradeState(relicCode = relic.code)
 
     val unreadNotificationCount: Int
         get() = notifications.count { !it.isRead }
@@ -169,6 +203,16 @@ class DigiPulseViewModel(
     private val _ultraRareMonsterPartsCount = MutableStateFlow(0)
     private val _lastClaimedDailyLoginDateKey = MutableStateFlow("")
     private val _lastDailyLoginRewardSummary = MutableStateFlow<String?>(null)
+    private val _selectedWorldRegionId = MutableStateFlow("aurelia_meadows")
+    private val _turnBasedBattle = MutableStateFlow<TurnBasedBattleState?>(null)
+    private val _daycareState = MutableStateFlow(DaycareBreedingState())
+    private val _frontierTowerState = MutableStateFlow(FrontierTowerState())
+    private val _tamerQuests = MutableStateFlow(LongPlayRpgCatalog.defaultTamerQuests())
+    private val _tamerPassState = MutableStateFlow(TamerPassState())
+    private val _forgedRelics = MutableStateFlow<Map<String, ForgedRelicUpgradeState>>(emptyMap())
+    private val _unlockedRuneCodes = MutableStateFlow(
+        setOf(ResonanceRune.SOLAR_CRIT.runeCode, ResonanceRune.GALE_SWIFTNESS.runeCode)
+    )
 
     private val _systemAlertEvents = MutableSharedFlow<SystemAlertEvent>(extraBufferCapacity = 8)
     val systemAlertEvents: SharedFlow<SystemAlertEvent> = _systemAlertEvents.asSharedFlow()
@@ -435,10 +479,17 @@ class DigiPulseViewModel(
             ) { berries, stdParts, ultraParts, orbInv, selOrbAndRes ->
                 Tuple5(berries, stdParts, ultraParts, orbInv, selOrbAndRes)
             },
-            _lastClaimedDailyLoginDateKey,
-            _lastDailyLoginRewardSummary
-        ) { coinWild, foodInv, berryAndParts, claimedDateKey, claimSummary ->
-            Tuple5(coinWild, foodInv, berryAndParts, claimedDateKey, claimSummary)
+            combine(_lastClaimedDailyLoginDateKey, _lastDailyLoginRewardSummary) { d, s -> d to s },
+            combine(
+                combine(_selectedWorldRegionId, _turnBasedBattle, _daycareState, _frontierTowerState) { reg, tb, dc, ft ->
+                    Tuple4(reg, tb, dc, ft)
+                },
+                combine(_tamerQuests, _tamerPassState, _forgedRelics, _unlockedRuneCodes) { q, p, r, u ->
+                    Tuple4(q, p, r, u)
+                }
+            ) { rpg1, rpg2 -> rpg1 to rpg2 }
+        ) { coinWild, foodInv, berryAndParts, dailyMeta, rpgMeta ->
+            Tuple5(coinWild, foodInv, berryAndParts, dailyMeta, rpgMeta)
         }
     ) { cloud, optimistic, meta1, meta2, storeAndCoinMeta ->
         val coinMeta = storeAndCoinMeta.first
@@ -449,8 +500,10 @@ class DigiPulseViewModel(
         val localOrbInv = storeAndCoinMeta.third.fourth
         val selectedOrbType = storeAndCoinMeta.third.fifth.first
         val optReserveList = storeAndCoinMeta.third.fifth.second
-        val claimedDateKey = storeAndCoinMeta.fourth
-        val claimSummary = storeAndCoinMeta.fifth
+        val claimedDateKey = storeAndCoinMeta.fourth.first
+        val claimSummary = storeAndCoinMeta.fourth.second
+        val rpgPart1 = storeAndCoinMeta.fifth.first
+        val rpgPart2 = storeAndCoinMeta.fifth.second
         val rawCreatures = if (optimistic.isResetting) {
             emptyList()
         } else if (optimistic.creatures.isNotEmpty() || optimistic.removedCreatureIds.isNotEmpty()) {
@@ -660,6 +713,14 @@ class DigiPulseViewModel(
             dailyLoginClaimedToday = isDailyClaimedToday,
             dailyLoginStreakDays = streakDays,
             lastDailyLoginRewardText = resolvedDailyRewardText,
+            selectedWorldRegionId = rpgPart1.first,
+            turnBasedBattle = rpgPart1.second,
+            daycareState = rpgPart1.third,
+            frontierTowerState = rpgPart1.fourth,
+            tamerQuests = rpgPart2.first,
+            tamerPassState = rpgPart2.second,
+            forgedRelics = rpgPart2.third,
+            unlockedRuneCodes = rpgPart2.fourth,
             errorMessage = meta2.fifth,
             isGoogleSignedIn = isGoogleSignedIn
         )
@@ -701,6 +762,7 @@ class DigiPulseViewModel(
             repository.markGameStarted(currentUserId, true)
             _optimisticCreatures.value = savedLocalCreatures
         }
+        loadLongPlayRpgStateFromStorage()
 
         observeLocalEconomyPersistence()
         scanWildMonster()
@@ -993,6 +1055,17 @@ class DigiPulseViewModel(
         _lastDailyLoginRewardSummary.value = null
         _recentEvolutionUnlocked.value = null
         _latestSparringResult.value = null
+        _selectedWorldRegionId.value = LongPlayRpgCatalog.worldRegions.first().regionId
+        _turnBasedBattle.value = null
+        _daycareState.value = DaycareBreedingState()
+        _frontierTowerState.value = FrontierTowerState()
+        _tamerQuests.value = LongPlayRpgCatalog.defaultTamerQuests()
+        _tamerPassState.value = TamerPassState()
+        _forgedRelics.value = emptyMap()
+        _unlockedRuneCodes.value = setOf(
+            ResonanceRune.SOLAR_CRIT.runeCode,
+            ResonanceRune.GALE_SWIFTNESS.runeCode
+        )
         alertedHungerLowIds.clear()
         alertedEvolutionReadyIds.clear()
         alertedHealthLowIds.clear()
@@ -2240,6 +2313,8 @@ class DigiPulseViewModel(
                 )
             )
             upsertOptimisticCreature(updated)
+            recordQuestProgress(TamerQuestType.WIN_BATTLES, 1)
+            advanceDaycareIncubation(12)
             _statusBannerMessage.value = "${drillType.shortTitle} Complete! $summary"
 
             if (isGoogleSignedIn) {
@@ -2486,6 +2561,11 @@ class DigiPulseViewModel(
             )
         )
         _statusBannerMessage.value = summary
+        if (wonBattle) {
+            recordQuestProgress(TamerQuestType.WIN_BATTLES, 1)
+            recordQuestProgress(TamerQuestType.DEFEAT_BOSS_OR_LEADER, 1)
+        }
+        advanceDaycareIncubation(10)
 
         viewModelScope.launch {
             if (isGoogleSignedIn) {
@@ -2533,7 +2613,11 @@ class DigiPulseViewModel(
             else -> Random.nextInt(65, 85)
         }
         val activeCharm = uiState.value.activeCreature?.heldRelic() == com.example.data.model.HeldRelicItem.LUCKY_CAPTURE_CHARM
-        val shinyOddsPercent = if (activeCharm) 10 else 5
+        val frontierShinyBoost = if (_frontierTowerState.value.shinyCharmUnlocked) 15 else 0
+        val runeShinyBoost = uiState.value.activeCreature?.let {
+            uiState.value.getForgedRelicState(it.heldRelic()).totalCaptureAndShinyBonusPct() / 2
+        } ?: 0
+        val shinyOddsPercent = ((if (activeCharm) 10 else 5) + frontierShinyBoost + runeShinyBoost).coerceIn(5, 45)
         val isChromatic = Random.nextInt(100) < shinyOddsPercent
         val wildNature = com.example.data.model.CompanionNature.entries[Random.nextInt(com.example.data.model.CompanionNature.entries.size)]
 
@@ -2580,6 +2664,7 @@ class DigiPulseViewModel(
             wildNatureName = wildNature.displayName,
             lastEffectivenessLabel = ""
         )
+        syncTurnBasedBattleFromWild()
         if (radarEvadedNotice != null) {
             _statusBannerMessage.value = radarEvadedNotice
         }
@@ -2847,6 +2932,8 @@ class DigiPulseViewModel(
         }
 
         _statusBannerMessage.value = summary
+        recordQuestProgress(TamerQuestType.WIN_BATTLES, 1)
+        advanceDaycareIncubation(10)
         // Automatically scan a fresh wild monster after battle
         scanWildMonster()
 
@@ -2979,6 +3066,8 @@ class DigiPulseViewModel(
         )
 
         if (nowTamed) {
+            recordQuestProgress(TamerQuestType.CATCH_WILD, 1)
+            advanceDaycareIncubation(15)
             finalizeWildTaming(currentEncounter, chosenOrb)
         } else {
             _statusBannerMessage.value = "$outcomeTitle — ${currentEncounter.speciesName} Capture Gauge: $updatedProgress/100% ($remainingOfChosen ${chosenOrb.displayName}s left)"
@@ -3068,6 +3157,8 @@ class DigiPulseViewModel(
             }
         }
 
+        recordQuestProgress(TamerQuestType.CATCH_WILD, 1)
+        advanceDaycareIncubation(15)
         if (!goesToPartyDirectly) {
             _pendingTamedCreature.value = tamedCreature
             _statusBannerMessage.value =
@@ -3801,6 +3892,975 @@ class DigiPulseViewModel(
         return (cloudEntries + localPlayerFallback + rivalBenchmarks)
             .distinctBy { it.userId }
             .sortedByDescending { it.totalCombatPower }
+    }
+
+    // =========================================================================
+    // LONG-PLAY RPG EXPANSION:
+    // 1. Visual World Map & 4-Move Turn-Based Battle Engine (Speed & Switching)
+    // 2. Sanctuary Daycare Breeding & Starlight Chromatic Shiny Hunting
+    // 3. Endless Battle Frontier Tower & BP Exchange
+    // 4. Daily & Weekly Tamer Quests + Milestone Reward Pass
+    // 5. Relic Crafting Forge (+1..+5) & Resonance Rune Sockets
+    // =========================================================================
+
+    fun selectWorldRegion(regionId: String) {
+        val region = LongPlayRpgCatalog.worldRegions.firstOrNull { it.regionId == regionId }
+            ?: LongPlayRpgCatalog.worldRegions.first()
+        _selectedWorldRegionId.value = region.regionId
+        val preferredSpecies = region.featuredSpeciesIds[Random.nextInt(region.featuredSpeciesIds.size)]
+        scanWildMonster(preferredSpecies)
+        _statusBannerMessage.value =
+            "🗺️ Traveled to ${region.regionTitle} (${region.realmName} • ${region.weatherLabel}): ${region.weatherEffectSummary}"
+    }
+
+    fun syncTurnBasedBattleFromWild() {
+        val encounter = _wildEncounter.value ?: return
+        val currentTb = _turnBasedBattle.value
+        if (currentTb != null && currentTb.mode != TurnBasedBattleMode.WILD_ENCOUNTER && !currentTb.isFinished) {
+            // Do not overwrite an active Sanctum Leader or Frontier Tower battle
+            return
+        }
+        val spec = DigimonCatalog.getSpec(encounter.speciesId)
+        val maxHp = (90 + encounter.wildLevel * 12).coerceAtLeast(100)
+        val curHp = ((maxHp * encounter.wildHpPercent) / 100).coerceIn(1, maxHp)
+        _turnBasedBattle.value = TurnBasedBattleState(
+            battleId = "wild_${spec.speciesId}_${encounter.wildLevel}",
+            mode = TurnBasedBattleMode.WILD_ENCOUNTER,
+            regionId = _selectedWorldRegionId.value,
+            turnNumber = currentTb?.turnNumber ?: 1,
+            enemyName = "${if (encounter.isChromaticShiny) "✨ " else ""}Wild ${spec.speciesName}",
+            enemyTitle = "${encounter.rarityTier.displayName.uppercase()} • LVL ${encounter.wildLevel} • ${encounter.wildNatureName.uppercase()}",
+            enemySpeciesId = spec.speciesId,
+            enemyStage = spec.stage,
+            enemyAttribute = spec.attribute,
+            enemyLevel = encounter.wildLevel,
+            enemyCurrentHp = curHp,
+            enemyMaxHp = maxHp,
+            enemyAttack = spec.baseAttack + encounter.wildLevel * 3,
+            enemyDefense = spec.baseDefense + encounter.wildLevel * 3,
+            enemySpeed = spec.baseSpeed + encounter.wildLevel * 3,
+            enemyStatusEffect = encounter.statusEffect,
+            isChromaticShiny = encounter.isChromaticShiny,
+            isBossTier = encounter.rarityTier == com.example.data.model.WildRarityTier.LEGENDARY_APEX ||
+                encounter.rarityTier == com.example.data.model.WildRarityTier.ULTRA_RARE,
+            rarityTier = encounter.rarityTier,
+            baseCaptureRatePercent = encounter.baseSuccessRatePercent,
+            combatLog = listOf(
+                "🌿 Encountered ${if (encounter.isChromaticShiny) "✨ STARLIGHT CHROMATIC " else ""}${spec.speciesName} (LVL ${encounter.wildLevel})!",
+                encounter.lastRollOutcomeDetail
+            ),
+            lastActionHeadline = encounter.lastRollOutcomeTitle,
+            lastActionDetail = encounter.lastRollOutcomeDetail
+        )
+    }
+
+    fun startSanctumLeaderTurnBasedBattle(leader: SanctumLeaderSpec) {
+        val active = uiState.value.activeCreature ?: return
+        if (checkBlockedBy1HpRecovery(active)) return
+        val spec = DigimonCatalog.getSpec(leader.aceSpeciesId)
+        val maxHp = 140 + (leader.recommendedLevel * 16)
+        val atk = spec.baseAttack + (leader.recommendedLevel * 5)
+        val def = spec.baseDefense + (leader.recommendedLevel * 4)
+        val spd = spec.baseSpeed + (leader.recommendedLevel * 4)
+        _turnBasedBattle.value = TurnBasedBattleState(
+            battleId = "sanctum_${leader.badgeNumber}",
+            mode = TurnBasedBattleMode.SANCTUM_LEADER,
+            regionId = _selectedWorldRegionId.value,
+            turnNumber = 1,
+            enemyName = "Leader ${leader.leaderName}'s ${leader.aceSpeciesName}",
+            enemyTitle = "${leader.realmName.uppercase()} CREST #${leader.badgeNumber} • ${leader.badgeName.uppercase()}",
+            enemySpeciesId = leader.aceSpeciesId,
+            enemyStage = spec.stage,
+            enemyAttribute = leader.elementAttribute,
+            enemyLevel = leader.recommendedLevel,
+            enemyCurrentHp = maxHp,
+            enemyMaxHp = maxHp,
+            enemyAttack = atk,
+            enemyDefense = def,
+            enemySpeed = spd,
+            isBossTier = true,
+            sanctumBadgeNumber = leader.badgeNumber,
+            combatLog = listOf(
+                "🏛️ Sanctum Leader ${leader.leaderName} of ${leader.cityTitle} challenged you for the ${leader.badgeName}!",
+                "⚔️ ${leader.leaderName} sent out ${leader.aceSpeciesName} (LVL ${leader.recommendedLevel} • ${leader.elementAttribute})!"
+            ),
+            lastActionHeadline = "SANCTUM TRIAL: LEADER ${leader.leaderName.uppercase()}",
+            lastActionDetail = "Use 4-Move Turn-Based Combat & Party Switching to defeat ${leader.aceSpeciesName} and earn the ${leader.badgeName}!"
+        )
+        _statusBannerMessage.value =
+            "🏛️ Entered Turn-Based Sanctum Trial vs Leader ${leader.leaderName}'s ${leader.aceSpeciesName} (LVL ${leader.recommendedLevel})!"
+    }
+
+    fun startFrontierTowerFloorBattle() {
+        val active = uiState.value.activeCreature ?: return
+        if (checkBlockedBy1HpRecovery(active)) return
+        val floor = _frontierTowerState.value.currentFloor.coerceAtLeast(1)
+        val battleState = LongPlayRpgCatalog.buildFrontierOpponentForFloor(floor)
+        _turnBasedBattle.value = battleState
+        _statusBannerMessage.value =
+            "🗼 Battle Frontier Tower Floor $floor started! ${battleState.enemyName} (LVL ${battleState.enemyLevel}) awaits!"
+    }
+
+    fun executeTurnBasedMove(moveIndex: Int) {
+        val active = uiState.value.activeCreature ?: return
+        val nowMs = System.currentTimeMillis()
+        if (checkBlockedBy1HpRecovery(active, nowMs)) return
+
+        val battle = _turnBasedBattle.value ?: run {
+            syncTurnBasedBattleFromWild()
+            _turnBasedBattle.value ?: return
+        }
+        if (battle.isFinished) {
+            when (battle.mode) {
+                TurnBasedBattleMode.WILD_ENCOUNTER -> scanWildMonster()
+                TurnBasedBattleMode.FRONTIER_TOWER -> startFrontierTowerFloorBattle()
+                TurnBasedBattleMode.SANCTUM_LEADER -> {
+                    val leader = com.example.data.model.DigiWorldExpansionCatalog.allSanctumLeaders
+                        .firstOrNull { it.badgeNumber == battle.sanctumBadgeNumber }
+                        ?: com.example.data.model.DigiWorldExpansionCatalog.allSanctumLeaders.first()
+                    startSanctumLeaderTurnBasedBattle(leader)
+                }
+            }
+            return
+        }
+
+        // If in WILD_ENCOUNTER mode, also keep _wildEncounter synchronized
+        val moves = DigimonCatalog.getFourBattleMoves(active)
+        val move = moves.getOrElse(moveIndex.coerceIn(0, moves.lastIndex)) { moves.first() }
+        val currentPp = battle.movePpRemaining[move.moveIndex] ?: move.maxPp
+        if (currentPp <= 0) {
+            _statusBannerMessage.value = "${move.moveName} has 0 PP remaining! Choose another move or switch companions."
+            return
+        }
+
+        val relicUpgrade = uiState.value.getForgedRelicState(active.heldRelic())
+        val playerFirst = battle.playerActsFirst(active, relicUpgrade.totalBonusSpdPct())
+        val elemMult = com.example.data.model.ElementalMatchupEngine.effectivenessMultiplier(
+            attackerAttr = move.elementAttribute,
+            defenderAttr = battle.enemyAttribute
+        )
+        val elemBadge = com.example.data.model.ElementalMatchupEngine.effectivenessBadge(elemMult)
+        val stabMult = if (move.elementAttribute.equals(active.attribute, ignoreCase = true)) 1.25f else 1.0f
+        val isCrit = Random.nextInt(100) < relicUpgrade.totalCritChancePct()
+        val critMult = if (isCrit) 1.5f else 1.0f
+        val relicAtkMult = 1f + (relicUpgrade.totalBonusAtkPct() / 100f)
+
+        val rawPlayerPower = when (move.category) {
+            com.example.data.model.BattleMoveCategory.ELEMENTAL_STRIKE ->
+                ((active.effectiveAttack() * 0.55f + move.power * 0.65f) * elemMult * stabMult * critMult * relicAtkMult).toInt()
+            com.example.data.model.BattleMoveCategory.MERCY_SUBDUE ->
+                ((active.effectiveAttack() * 0.45f + move.power * 0.55f) * relicAtkMult).toInt()
+            com.example.data.model.BattleMoveCategory.STATUS_WAVE ->
+                ((active.effectiveWisdom() * 0.30f + 18) * elemMult).toInt()
+            com.example.data.model.BattleMoveCategory.CREST_SURGE ->
+                ((active.effectiveWisdom() * 0.45f + active.effectiveAttack() * 0.25f + 28) * critMult * relicAtkMult).toInt()
+        }.coerceAtLeast(12)
+
+        var newStatus = battle.enemyStatusEffect
+        if (move.category == com.example.data.model.BattleMoveCategory.STATUS_WAVE) {
+            newStatus = when {
+                move.moveName.contains("Sleep", ignoreCase = true) -> com.example.data.model.WildStatusEffect.SLEEP
+                move.moveName.contains("Paralyze", ignoreCase = true) -> com.example.data.model.WildStatusEffect.PARALYZED
+                else -> com.example.data.model.WildStatusEffect.BURNED
+            }
+        }
+
+        val minEnemyHpAllowed = if (
+            battle.mode == TurnBasedBattleMode.WILD_ENCOUNTER &&
+            move.category != com.example.data.model.BattleMoveCategory.ELEMENTAL_STRIKE
+        ) {
+            maxOf(1, battle.enemyMaxHp / 100)
+        } else {
+            0
+        }
+
+        val newEnemyHp = (battle.enemyCurrentHp - rawPlayerPower).coerceAtLeast(minEnemyHpAllowed)
+        val lifestealHeal = ((rawPlayerPower * relicUpgrade.totalLifestealPct()) / 100).coerceAtLeast(0)
+        val crestSurgeHeal = if (move.category == com.example.data.model.BattleMoveCategory.CREST_SURGE) 18 else 0
+        val passiveRelicHeal = active.heldRelic().passiveHealBonus
+        val totalSelfHeal = lifestealHeal + crestSurgeHeal + passiveRelicHeal
+
+        val enemyDefeated = newEnemyHp <= 0
+        val statusImmobilized = !enemyDefeated && when (newStatus) {
+            com.example.data.model.WildStatusEffect.SLEEP -> Random.nextInt(100) < 72
+            com.example.data.model.WildStatusEffect.PARALYZED -> Random.nextInt(100) < 48
+            else -> false
+        }
+
+        val enemyCounterMult = com.example.data.model.ElementalMatchupEngine.effectivenessMultiplier(
+            attackerAttr = battle.enemyAttribute,
+            defenderAttr = active.attribute
+        )
+        val guardReductionMult = (1f - (relicUpgrade.totalBonusDefPct().coerceAtMost(60) / 150f)).coerceIn(0.45f, 1.0f)
+        val burnWeakenedMult = if (newStatus == com.example.data.model.WildStatusEffect.BURNED) 0.65f else 1.0f
+        val enemyDamage = if (enemyDefeated || statusImmobilized) {
+            0
+        } else {
+            val baseEnemyHit = (10 + (battle.enemyLevel / 3) + Random.nextInt(4, 12))
+            (baseEnemyHit * enemyCounterMult * guardReductionMult * burnWeakenedMult).toInt().coerceIn(3, 42)
+        }
+
+        val newPlayerHp = (active.health - enemyDamage + totalSelfHeal).coerceIn(1, 100)
+        val hit1Hp = newPlayerHp <= 1 && !enemyDefeated
+        val recoveryEndMs = if (hit1Hp) nowMs + DigimonCatalog.BATTLE_RECOVERY_5MIN_DURATION_MS else active.persistedRecoveryEndsAtMs()
+
+        advanceDaycareIncubation(10)
+
+        val turnLogs = mutableListOf<String>()
+        val speedOrderTag = if (playerFirst) "⚡ First Strike (SPD ${active.effectiveSpeed()})" else "🛡️ Counter Turn (Enemy SPD ${battle.enemySpeed})"
+        val critTag = if (isCrit) " 💥 CRITICAL HIT!" else ""
+        turnLogs.add("Turn ${battle.turnNumber} [$speedOrderTag]: ${active.nickname} used ${move.moveName}!$critTag (-$rawPlayerPower HP • $elemBadge)")
+        if (newStatus != battle.enemyStatusEffect && newStatus != com.example.data.model.WildStatusEffect.NONE) {
+            turnLogs.add("✨ ${battle.enemyName} is now ${newStatus.badgeLabel}!")
+        }
+        if (totalSelfHeal > 0) {
+            turnLogs.add("💚 ${active.nickname} restored +$totalSelfHeal HP (Relic/Rune/Crest Resonance).")
+        }
+        if (!enemyDefeated) {
+            if (statusImmobilized) {
+                turnLogs.add("⚡ ${battle.enemyName} is immobilized by ${newStatus.name} and couldn't attack!")
+            } else {
+                turnLogs.add("⚔️ ${battle.enemyName} struck back for -$enemyDamage HP!")
+            }
+        }
+
+        val updatedPpMap = battle.movePpRemaining.toMutableMap().apply {
+            put(move.moveIndex, (currentPp - 1).coerceAtLeast(0))
+        }
+
+        if (enemyDefeated) {
+            handleTurnBasedVictory(active, battle, turnLogs, newPlayerHp, nowMs)
+            return
+        }
+
+        val updatedCreature = active.copy(
+            health = newPlayerHp,
+            stamina = (active.stamina - 4).coerceIn(0, 100),
+            bondLevel = (active.bondLevel + 1).coerceIn(0, 100),
+            recoveryEndsAtMs = recoveryEndMs,
+            unlockedForms = active.withUpdatedMetadataInForms(newRecoveryEndsMs = recoveryEndMs),
+            lastUpdatedMs = nowMs
+        )
+        upsertOptimisticCreature(updatedCreature)
+        if (isGoogleSignedIn) {
+            viewModelScope.launch { repository.updateCreature(updatedCreature) }
+        }
+
+        val updatedBattle = battle.copy(
+            turnNumber = battle.turnNumber + 1,
+            enemyCurrentHp = newEnemyHp,
+            enemyStatusEffect = newStatus,
+            movePpRemaining = updatedPpMap,
+            combatLog = (turnLogs + battle.combatLog).take(10),
+            lastActionHeadline = "${active.nickname} used ${move.moveName}!$critTag",
+            lastActionDetail = turnLogs.joinToString(" • "),
+            lastEffectivenessMultiplier = elemMult
+        )
+        _turnBasedBattle.value = updatedBattle
+
+        // If in WILD_ENCOUNTER mode, mirror HP % and status to _wildEncounter so Acorn Orb throws use the weakened HP & status!
+        if (battle.mode == TurnBasedBattleMode.WILD_ENCOUNTER) {
+            _wildEncounter.value = _wildEncounter.value?.copy(
+                wildHpPercent = updatedBattle.enemyHpPercent.coerceIn(1, 100),
+                statusEffect = newStatus,
+                lastEffectivenessLabel = elemBadge,
+                lastRollOutcomeTitle = updatedBattle.lastActionHeadline,
+                lastRollOutcomeDetail = updatedBattle.lastActionDetail
+            )
+        }
+    }
+
+    private fun handleTurnBasedVictory(
+        active: DigimonCreature,
+        battle: TurnBasedBattleState,
+        turnLogs: List<String>,
+        remainingPlayerHp: Int,
+        nowMs: Long
+    ) {
+        recordQuestProgress(TamerQuestType.WIN_BATTLES, 1)
+        when (battle.mode) {
+            TurnBasedBattleMode.WILD_ENCOUNTER -> {
+                battleWildMonster()
+                return
+            }
+            TurnBasedBattleMode.SANCTUM_LEADER -> {
+                val leader = com.example.data.model.DigiWorldExpansionCatalog.allSanctumLeaders
+                    .firstOrNull { it.badgeNumber == battle.sanctumBadgeNumber }
+                if (leader != null) {
+                    val alreadyEarned = active.hasSanctumBadge(leader.badgeNumber)
+                    val bit = 1 shl (leader.badgeNumber - 1)
+                    val newMask = active.earnedSanctumBadgesMask() or bit
+                    val coinsWon = if (!alreadyEarned) leader.rewardCoins else (leader.rewardCoins / 2).coerceAtLeast(15)
+                    _digiCoins.value = _digiCoins.value + coinsWon
+                    _ultraRareMonsterPartsCount.value = _ultraRareMonsterPartsCount.value + 1
+                    recordQuestProgress(TamerQuestType.DEFEAT_BOSS_OR_LEADER, 1)
+
+                    val updated = active.copy(
+                        health = remainingPlayerHp.coerceIn(15, 100),
+                        attack = active.attack + 2,
+                        defense = active.defense + 2,
+                        speed = active.speed + 2,
+                        wisdom = active.wisdom + 3,
+                        evolutionProgress = (active.evolutionProgress + 12).coerceIn(0, 100),
+                        bondLevel = (active.bondLevel + 4).coerceIn(0, 100),
+                        unlockedForms = active.withUpdatedMetadataInForms(newBadgesMask = newMask),
+                        lastUpdatedMs = nowMs
+                    )
+                    upsertOptimisticCreature(updated)
+                    val victoryHeadline = "🏅 DEFEATED LEADER ${leader.leaderName.uppercase()}! EARNED ${leader.badgeName.uppercase()}!"
+                    val victoryDetail = "Earned +$coinsWon Crest Coins, +1x Relic Shard, & +1 Companion Level!"
+                    _turnBasedBattle.value = battle.copy(
+                        enemyCurrentHp = 0,
+                        isFinished = true,
+                        playerWon = true,
+                        rewardCoinsEarned = coinsWon,
+                        combatLog = listOf(victoryHeadline, victoryDetail) + turnLogs + battle.combatLog,
+                        lastActionHeadline = victoryHeadline,
+                        lastActionDetail = victoryDetail
+                    )
+                    _statusBannerMessage.value = "$victoryHeadline $victoryDetail"
+                    if (isGoogleSignedIn) {
+                        viewModelScope.launch {
+                            repository.updateCreature(updated)
+                            syncLeaderboardWithSquad(extraSparringWin = 1)
+                        }
+                    }
+                }
+            }
+            TurnBasedBattleMode.FRONTIER_TOWER -> {
+                val curTower = _frontierTowerState.value
+                val floorCleared = battle.frontierFloorNumber.coerceAtLeast(curTower.currentFloor)
+                val isBoss = floorCleared % 5 == 0
+                val bpEarned = (if (isBoss) 18 else 8) + (curTower.currentWinStreak.coerceAtMost(10))
+                val coinsEarned = (15 + floorCleared * 3 + if (isBoss) 25 else 0)
+                val nextFloor = floorCleared + 1
+                val newStreak = curTower.currentWinStreak + 1
+                val updatedTower = curTower.copy(
+                    currentFloor = nextFloor,
+                    highestFloorReached = maxOf(curTower.highestFloorReached, nextFloor),
+                    currentWinStreak = newStreak,
+                    bestWinStreak = maxOf(curTower.bestWinStreak, newStreak),
+                    battlePoints = curTower.battlePoints + bpEarned,
+                    totalBossesDefeated = curTower.totalBossesDefeated + (if (isBoss) 1 else 0)
+                )
+                _frontierTowerState.value = updatedTower
+                saveFrontierStateToStorage(updatedTower)
+
+                _digiCoins.value = _digiCoins.value + coinsEarned
+                if (isBoss) {
+                    _ultraRareMonsterPartsCount.value = _ultraRareMonsterPartsCount.value + 2
+                    recordQuestProgress(TamerQuestType.DEFEAT_BOSS_OR_LEADER, 1)
+                } else {
+                    _standardMonsterPartsCount.value = _standardMonsterPartsCount.value + 2
+                }
+                recordQuestProgress(TamerQuestType.CLIMB_FRONTIER_TOWER, 1)
+
+                val updated = active.copy(
+                    health = remainingPlayerHp.coerceIn(20, 100),
+                    attack = active.attack + 2,
+                    defense = active.defense + 2,
+                    speed = active.speed + 2,
+                    wisdom = active.wisdom + 3,
+                    evolutionProgress = (active.evolutionProgress + 10).coerceIn(0, 100),
+                    bondLevel = (active.bondLevel + 3).coerceIn(0, 100),
+                    lastUpdatedMs = nowMs
+                )
+                upsertOptimisticCreature(updated)
+                val headline = if (isBoss) {
+                    "👑 FRONTIER BOSS FLOOR $floorCleared CONQUERED!"
+                } else {
+                    "🗼 FRONTIER FLOOR $floorCleared CLEARED! (STREAK x$newStreak)"
+                }
+                val detail = "Earned +$bpEarned Battle Points (BP), +$coinsEarned Crest Coins, & +1 Companion Level! Next: Floor $nextFloor."
+                _turnBasedBattle.value = battle.copy(
+                    enemyCurrentHp = 0,
+                    isFinished = true,
+                    playerWon = true,
+                    rewardCoinsEarned = coinsEarned,
+                    rewardBpEarned = bpEarned,
+                    combatLog = listOf(headline, detail) + turnLogs + battle.combatLog,
+                    lastActionHeadline = headline,
+                    lastActionDetail = detail
+                )
+                _statusBannerMessage.value = "$headline $detail"
+                if (isGoogleSignedIn) {
+                    viewModelScope.launch {
+                        repository.updateCreature(updated)
+                        syncLeaderboardWithSquad(extraSparringWin = 1)
+                    }
+                }
+            }
+        }
+    }
+
+    fun switchPartyCompanionMidBattle(targetCreatureId: String) {
+        val currentState = uiState.value
+        val target = currentState.creatures.firstOrNull { it.id == targetCreatureId } ?: return
+        if (target.id == currentState.activeCreature?.id) {
+            _statusBannerMessage.value = "${target.nickname} is already leading the battle!"
+            return
+        }
+        if (checkBlockedBy1HpRecovery(target)) return
+        _selectedCreatureId.value = target.id
+        val battle = _turnBasedBattle.value
+        if (battle != null && !battle.isFinished) {
+            val elemMult = com.example.data.model.ElementalMatchupEngine.effectivenessMultiplier(
+                attackerAttr = target.attribute,
+                defenderAttr = battle.enemyAttribute
+            )
+            val matchupNote = com.example.data.model.ElementalMatchupEngine.effectivenessBadge(elemMult)
+            val switchMsg = "🔄 Switched in ${target.nickname} (${target.attribute} • LVL ${target.currentLevel()}) with Tactical Aegis Ward (+15% Guard)! Matchup: $matchupNote"
+            _turnBasedBattle.value = battle.copy(
+                turnNumber = battle.turnNumber + 1,
+                movePpRemaining = mapOf(0 to 15, 1 to 25, 2 to 15, 3 to 10),
+                playerTempDefStage = (battle.playerTempDefStage + 1).coerceAtMost(3),
+                combatLog = (listOf(switchMsg) + battle.combatLog).take(10),
+                lastActionHeadline = "TACTICAL SWITCH: ${target.nickname.uppercase()}!",
+                lastActionDetail = switchMsg
+            )
+            _statusBannerMessage.value = switchMsg
+        } else {
+            _statusBannerMessage.value = "Switched lead companion to ${target.nickname}!"
+        }
+    }
+
+    fun assignDaycareParents(parentOneId: String, parentTwoId: String) {
+        val allPool = uiState.value.creatures + uiState.value.emeraldReserveEntries.map { it.toDigimonCreature() }
+        val p1 = allPool.firstOrNull { it.id == parentOneId } ?: uiState.value.activeCreature ?: return
+        val p2 = allPool.firstOrNull { it.id == parentTwoId && it.id != p1.id }
+            ?: allPool.firstOrNull { it.id != p1.id }
+
+        val p2Name = p2?.nickname ?: "Sanctuary Astral Spirit"
+        val p2SpeciesId = p2?.speciesId ?: p1.speciesId
+        val p2Attr = p2?.attribute ?: "Astral"
+        val p2Shiny = p2?.isChromaticShiny() ?: false
+
+        val originRookieId = p1.unlockedEvolutionFormIds().firstOrNull { id ->
+            DigimonCatalog.allSpecies[id]?.stage == "Rookie"
+        } ?: DigimonCatalog.starterSpecs.firstOrNull {
+            it.attribute.equals(p1.attribute, ignoreCase = true)
+        }?.speciesId ?: "patamon"
+        val offspringSpec = DigimonCatalog.requireRookieStarterSpec(originRookieId)
+
+        val sameElement = p1.attribute.equals(p2Attr, ignoreCase = true)
+        val shinyCharmBonus = if (_frontierTowerState.value.shinyCharmUnlocked) 15 else 0
+        val parentShinyBonus = (if (p1.isChromaticShiny()) 10 else 0) + (if (p2Shiny) 10 else 0)
+        val runeShinyBonus = uiState.value.getForgedRelicState(p1.heldRelic()).totalCaptureAndShinyBonusPct() / 2
+        val totalShinyOdds = (15 + (if (sameElement) 8 else 4) + shinyCharmBonus + parentShinyBonus + runeShinyBonus).coerceIn(15, 65)
+        val inheritedIvBonus = (18 + (p1.bondLevel / 10) + (if (sameElement) 8 else 4)).coerceIn(18, 36)
+
+        val newDaycare = _daycareState.value.copy(
+            parentOneId = p1.id,
+            parentOneName = p1.nickname,
+            parentOneSpeciesId = p1.speciesId,
+            parentOneAttribute = p1.attribute,
+            parentOneShiny = p1.isChromaticShiny(),
+            parentTwoId = p2?.id ?: "astral_spirit",
+            parentTwoName = p2Name,
+            parentTwoSpeciesId = p2SpeciesId,
+            parentTwoAttribute = p2Attr,
+            parentTwoShiny = p2Shiny,
+            hasActiveEgg = true,
+            offspringSpeciesId = offspringSpec.speciesId,
+            offspringSpeciesName = offspringSpec.speciesName,
+            inheritedNatureCode = p1.companionNature().code,
+            inheritedBonusStats = inheritedIvBonus,
+            inheritedEggMove = "${p1.attribute}-${p2Attr} Crest Burst",
+            chromaticShinyOddsPercent = totalShinyOdds,
+            currentIncubationPoints = 25,
+            targetIncubationPoints = 100
+        )
+        _daycareState.value = newDaycare
+        saveDaycareStateToStorage(newDaycare)
+        recordQuestProgress(TamerQuestType.HATCH_OR_NURTURE_EGG, 1)
+        _statusBannerMessage.value =
+            "🥚 Sanctuary Daycare Egg Paired! Parents: ${p1.nickname} & $p2Name ➔ ${offspringSpec.speciesName} Egg (+$inheritedIvBonus Bonus IVs • $totalShinyOdds% ✨ Chromatic Shiny Odds)!"
+    }
+
+    fun advanceDaycareIncubation(points: Int) {
+        val current = _daycareState.value
+        if (!current.hasActiveEgg) return
+        val updated = current.copy(
+            currentIncubationPoints = (current.currentIncubationPoints + points).coerceAtMost(current.targetIncubationPoints)
+        )
+        _daycareState.value = updated
+        saveDaycareStateToStorage(updated)
+    }
+
+    fun nurtureDaycareEgg() {
+        val current = _daycareState.value
+        if (!current.hasActiveEgg) {
+            val lead = uiState.value.activeCreature ?: return
+            assignDaycareParents(lead.id, "")
+            return
+        }
+        if (current.isReadyToHatch) {
+            hatchDaycareEgg()
+            return
+        }
+        val costCoins = 4
+        if (_digiCoins.value >= costCoins) {
+            _digiCoins.value = (_digiCoins.value - costCoins).coerceAtLeast(0)
+        }
+        val nextPts = (current.currentIncubationPoints + 38).coerceAtMost(current.targetIncubationPoints)
+        val updated = current.copy(currentIncubationPoints = nextPts)
+        _daycareState.value = updated
+        saveDaycareStateToStorage(updated)
+        recordQuestProgress(TamerQuestType.HATCH_OR_NURTURE_EGG, 1)
+        _statusBannerMessage.value = if (updated.isReadyToHatch) {
+            "🥚 Sanctuary Egg reached 100% Incubation! Tap HATCH SANCTUARY EGG to welcome your newborn companion!"
+        } else {
+            "🔥 Warmed Sanctuary Egg (+38% Incubation ➔ ${updated.incubationPercent}%/100%)!"
+        }
+    }
+
+    fun hatchDaycareEgg() {
+        val current = _daycareState.value
+        if (!current.hasActiveEgg) return
+        val spec = DigimonCatalog.requireRookieStarterSpec(current.offspringSpeciesId)
+        val isShiny = Random.nextInt(100) < current.chromaticShinyOddsPercent
+        val nature = com.example.data.model.CompanionNature.fromCode(current.inheritedNatureCode)
+        val ivPerStat = (current.inheritedBonusStats / 4).coerceAtLeast(4) + (if (isShiny) 4 else 0)
+        val totalBonus = ivPerStat * 4
+        val nowMs = System.currentTimeMillis()
+        val newbornId = "bred_${nowMs}_${spec.speciesId}"
+        val shinyFlag = if (isShiny) 1 else 0
+        val defaultRelic = HeldRelicItem.VERDANT_SEED
+        val initialForms = listOf(
+            spec.speciesId,
+            "bn:$totalBonus",
+            "rg:${nature.code}:${defaultRelic.code}:$shinyFlag:0"
+        )
+        val newborn = DigimonCreature(
+            id = newbornId,
+            userId = currentUserId,
+            nickname = if (isShiny) "★${spec.speciesName}" else "${spec.speciesName}+",
+            speciesId = spec.speciesId,
+            speciesName = spec.speciesName,
+            stage = "Rookie",
+            attribute = spec.attribute,
+            health = 100,
+            stamina = 100,
+            hunger = 100,
+            evolutionProgress = 20,
+            attack = spec.baseAttack + ivPerStat,
+            defense = spec.baseDefense + ivPerStat,
+            speed = spec.baseSpeed + ivPerStat,
+            wisdom = spec.baseWisdom + ivPerStat,
+            nonTrainingBonusStats = totalBonus,
+            bondLevel = 55,
+            unlockedForms = initialForms,
+            lastUpdatedMs = nowMs
+        )
+
+        val goesToParty = uiState.value.creatures.size < DigimonCatalog.MAX_SQUAD_SIZE
+        val reserveEntry = EmeraldReserveEntry(
+            id = newbornId,
+            userId = currentUserId,
+            speciesId = spec.speciesId,
+            speciesName = spec.speciesName,
+            nickname = newborn.nickname,
+            stage = "Rookie",
+            elementAttribute = spec.attribute,
+            rarityTier = if (isShiny) "ULTRA_RARE" else "RARE",
+            capturedLevel = 1,
+            attack = newborn.attack,
+            defense = newborn.defense,
+            speed = newborn.speed,
+            wisdom = newborn.wisdom,
+            bondLevel = 55,
+            natureCode = nature.code,
+            heldRelicCode = defaultRelic.code,
+            chromaticShiny = isShiny,
+            orbUsedId = AcornOrbType.VERDANT_FRIEND_ORB.orbTypeId,
+            biomeZone = "Sanctuary Daycare Nursery",
+            inActiveParty = goesToParty,
+            capturedAtMs = nowMs
+        )
+        _optimisticEmeraldReserve.value = listOf(reserveEntry) + _optimisticEmeraldReserve.value
+        if (isGoogleSignedIn) {
+            viewModelScope.launch { repository.recordEmeraldReserveCapture(reserveEntry) }
+        }
+        if (goesToParty) {
+            addTamedCreatureToSquad(newborn)
+        } else {
+            _pendingTamedCreature.value = newborn
+        }
+
+        val updatedDaycare = current.copy(
+            currentIncubationPoints = 0,
+            totalEggsHatched = current.totalEggsHatched + 1,
+            totalShinyHatched = current.totalShinyHatched + (if (isShiny) 1 else 0)
+        )
+        _daycareState.value = updatedDaycare
+        saveDaycareStateToStorage(updatedDaycare)
+        recordQuestProgress(TamerQuestType.HATCH_OR_NURTURE_EGG, 1)
+
+        val shinyCallout = if (isShiny) "✨ STARLIGHT CHROMATIC SHINY HATCHED! " else "🐣 SANCTUARY EGG HATCHED! "
+        _statusBannerMessage.value =
+            "$shinyCallout${newborn.nickname} (${nature.displayName} • +$totalBonus Inherited IVs • Egg Move: ${current.inheritedEggMove}) joined your Sanctuary!"
+    }
+
+    fun redeemFrontierBpItem(item: FrontierBpShopItem) {
+        val tower = _frontierTowerState.value
+        if (tower.battlePoints < item.bpCost) {
+            _statusBannerMessage.value =
+                "Need ${item.bpCost} Frontier BP for ${item.title} (You have ${tower.battlePoints} BP)! Climb Battle Frontier Tower floors to earn BP."
+            return
+        }
+        val remainingBp = (tower.battlePoints - item.bpCost).coerceAtLeast(0)
+        when (item) {
+            FrontierBpShopItem.SHINY_STARLIGHT_CHARM -> {
+                val updatedTower = tower.copy(battlePoints = remainingBp, shinyCharmUnlocked = true)
+                _frontierTowerState.value = updatedTower
+                saveFrontierStateToStorage(updatedTower)
+                _statusBannerMessage.value =
+                    "✨ Unlocked the Permanent Starlight Chromatic Charm! Wild & Daycare Shiny odds increased by +15%!"
+            }
+            FrontierBpShopItem.LUNAR_ORB_BUNDLE -> {
+                val updatedTower = tower.copy(battlePoints = remainingBp)
+                _frontierTowerState.value = updatedTower
+                saveFrontierStateToStorage(updatedTower)
+                val map = _acornOrbInventory.value.toMutableMap()
+                val cur = map[AcornOrbType.LUNAR_MOON_ORB] ?: 0
+                map[AcornOrbType.LUNAR_MOON_ORB] = cur + 3
+                _acornOrbInventory.value = map
+                syncOrbTypeToFirestore(AcornOrbType.LUNAR_MOON_ORB)
+                _statusBannerMessage.value = "🌙 Redeemed +3x Lunar Moon Orbs from the Frontier BP Exchange!"
+            }
+            FrontierBpShopItem.RELIC_FORGE_CORE -> {
+                val updatedTower = tower.copy(battlePoints = remainingBp)
+                _frontierTowerState.value = updatedTower
+                saveFrontierStateToStorage(updatedTower)
+                _ultraRareMonsterPartsCount.value = _ultraRareMonsterPartsCount.value + 5
+                _standardMonsterPartsCount.value = _standardMonsterPartsCount.value + 10
+                _statusBannerMessage.value = "⚒️ Redeemed +5x Relic Shards & +10x Gilded Acorns for the Relic Forge!"
+            }
+            FrontierBpShopItem.SOVEREIGN_STAT_TOME -> {
+                val active = uiState.value.activeCreature ?: return
+                val updatedTower = tower.copy(battlePoints = remainingBp)
+                _frontierTowerState.value = updatedTower
+                saveFrontierStateToStorage(updatedTower)
+                val newBonus = active.persistedNonTrainingBonusStats() + 24
+                val updated = active.copy(
+                    attack = active.attack + 6,
+                    defense = active.defense + 6,
+                    speed = active.speed + 6,
+                    wisdom = active.wisdom + 6,
+                    evolutionProgress = (active.evolutionProgress + 25).coerceIn(0, 100),
+                    nonTrainingBonusStats = newBonus,
+                    unlockedForms = active.withUpdatedMetadataInForms(newBonusStats = newBonus),
+                    lastUpdatedMs = System.currentTimeMillis()
+                )
+                upsertOptimisticCreature(updated)
+                if (isGoogleSignedIn) {
+                    viewModelScope.launch { repository.updateCreature(updated) }
+                }
+                _statusBannerMessage.value =
+                    "📖 Bestowed Sovereign Ascendant Tome upon ${active.nickname}: +6 ALL STATS (+24 Total) & +25% Crest Sync!"
+            }
+        }
+    }
+
+    private fun recordQuestProgress(type: TamerQuestType, delta: Int = 1) {
+        val updated = _tamerQuests.value.map { quest ->
+            if (quest.questType == type && !quest.isClaimed) {
+                quest.copy(currentProgress = (quest.currentProgress + delta).coerceAtMost(quest.targetProgress))
+            } else {
+                quest
+            }
+        }
+        _tamerQuests.value = updated
+        saveQuestsStateToStorage(updated, _tamerPassState.value)
+    }
+
+    fun claimTamerQuestReward(questId: String) {
+        val quest = _tamerQuests.value.firstOrNull { it.questId == questId } ?: return
+        if (!quest.isCompleted || quest.isClaimed) return
+        _digiCoins.value = _digiCoins.value + quest.rewardCoins
+        _ultraRareMonsterPartsCount.value = _ultraRareMonsterPartsCount.value + quest.rewardRelicShards
+        val updatedTower = _frontierTowerState.value.copy(
+            battlePoints = _frontierTowerState.value.battlePoints + quest.rewardBp
+        )
+        _frontierTowerState.value = updatedTower
+        saveFrontierStateToStorage(updatedTower)
+
+        val updatedPass = _tamerPassState.value.copy(
+            totalPassXp = _tamerPassState.value.totalPassXp + quest.rewardPassXp
+        )
+        _tamerPassState.value = updatedPass
+        val updatedQuests = _tamerQuests.value.map {
+            if (it.questId == questId) it.copy(isClaimed = true) else it
+        }
+        _tamerQuests.value = updatedQuests
+        saveQuestsStateToStorage(updatedQuests, updatedPass)
+
+        _statusBannerMessage.value =
+            "🏆 Claimed '${quest.title}': +${quest.rewardCoins} Crest Coins, +${quest.rewardRelicShards}x Relic Shards, +${quest.rewardBp} BP, & +${quest.rewardPassXp} Tamer Pass XP!"
+    }
+
+    fun claimTamerPassMilestone(tier: Int) {
+        val pass = _tamerPassState.value
+        if (tier > pass.currentTier || tier in pass.claimedMilestoneTiers) return
+        val coins = 40 + (tier * 10)
+        val shards = 2
+        _digiCoins.value = _digiCoins.value + coins
+        _ultraRareMonsterPartsCount.value = _ultraRareMonsterPartsCount.value + shards
+        val map = _acornOrbInventory.value.toMutableMap()
+        map[AcornOrbType.LUNAR_MOON_ORB] = (map[AcornOrbType.LUNAR_MOON_ORB] ?: 0) + 1
+        _acornOrbInventory.value = map
+
+        val updatedPass = pass.copy(claimedMilestoneTiers = pass.claimedMilestoneTiers + tier)
+        _tamerPassState.value = updatedPass
+        saveQuestsStateToStorage(_tamerQuests.value, updatedPass)
+        _statusBannerMessage.value =
+            "🎁 Claimed Tamer Pass Tier $tier Milestone Chest: +$coins Crest Coins, +${shards}x Relic Shards, & +1x Lunar Moon Orb!"
+    }
+
+    fun upgradeHeldRelicInForge(relic: HeldRelicItem) {
+        val currentMap = _forgedRelics.value.toMutableMap()
+        val entry = currentMap[relic.code] ?: ForgedRelicUpgradeState(relicCode = relic.code)
+        if (entry.upgradeLevel >= 5) {
+            _statusBannerMessage.value = "${relic.displayName} is already at Maximum Sovereign +5 Enhancement!"
+            return
+        }
+        val nextLevel = entry.upgradeLevel + 1
+        val acornCost = nextLevel * 2
+        val shardCost = if (nextLevel >= 3) 2 else 1
+        val coinFallbackCost = nextLevel * 12
+
+        if (_standardMonsterPartsCount.value >= acornCost && _ultraRareMonsterPartsCount.value >= shardCost) {
+            _standardMonsterPartsCount.value = (_standardMonsterPartsCount.value - acornCost).coerceAtLeast(0)
+            _ultraRareMonsterPartsCount.value = (_ultraRareMonsterPartsCount.value - shardCost).coerceAtLeast(0)
+        } else if (_digiCoins.value >= coinFallbackCost) {
+            _digiCoins.value = (_digiCoins.value - coinFallbackCost).coerceAtLeast(0)
+        } else {
+            _statusBannerMessage.value =
+                "Need ${acornCost}x Gilded Acorns + ${shardCost}x Relic Shards (or $coinFallbackCost Crest Coins) to forge ${relic.displayName} +$nextLevel!"
+            return
+        }
+
+        val upgraded = entry.copy(upgradeLevel = nextLevel)
+        currentMap[relic.code] = upgraded
+        _forgedRelics.value = currentMap
+        saveRelicForgeToStorage(currentMap, _unlockedRuneCodes.value)
+        recordQuestProgress(TamerQuestType.FORGE_OR_UPGRADE_RELIC, 1)
+        _statusBannerMessage.value =
+            "⚒️ Forged ${relic.displayName} +$nextLevel! Total Bonuses: +${upgraded.totalBonusAtkPct()}% ATK, +${upgraded.totalBonusDefPct()}% DEF, +${upgraded.totalBonusSpdPct()}% SPD, +${upgraded.totalCritChancePct()}% Crit!"
+    }
+
+    fun craftOrSocketResonanceRune(relic: HeldRelicItem, socketNumber: Int, rune: ResonanceRune) {
+        val unlocked = _unlockedRuneCodes.value.toMutableSet()
+        if (rune.runeCode !in unlocked) {
+            val gCost = rune.craftGildedAcornsCost
+            val sCost = rune.craftRelicShardsCost
+            val coinFallback = 18
+            if (_standardMonsterPartsCount.value >= gCost && _ultraRareMonsterPartsCount.value >= sCost) {
+                _standardMonsterPartsCount.value = (_standardMonsterPartsCount.value - gCost).coerceAtLeast(0)
+                _ultraRareMonsterPartsCount.value = (_ultraRareMonsterPartsCount.value - sCost).coerceAtLeast(0)
+            } else if (_digiCoins.value >= coinFallback) {
+                _digiCoins.value = (_digiCoins.value - coinFallback).coerceAtLeast(0)
+            } else {
+                _statusBannerMessage.value =
+                    "Need ${gCost}x Gilded Acorns + ${sCost}x Relic Shards (or $coinFallback Coins) to craft ${rune.displayName}!"
+                return
+            }
+            unlocked.add(rune.runeCode)
+            _unlockedRuneCodes.value = unlocked
+        }
+
+        val currentMap = _forgedRelics.value.toMutableMap()
+        val entry = currentMap[relic.code] ?: ForgedRelicUpgradeState(relicCode = relic.code)
+        val updated = if (socketNumber <= 1) {
+            entry.copy(socketOneRuneCode = rune.runeCode)
+        } else {
+            entry.copy(socketTwoRuneCode = rune.runeCode)
+        }
+        currentMap[relic.code] = updated
+        _forgedRelics.value = currentMap
+        saveRelicForgeToStorage(currentMap, unlocked)
+        recordQuestProgress(TamerQuestType.FORGE_OR_UPGRADE_RELIC, 1)
+        _statusBannerMessage.value =
+            "💎 Socketed ${rune.displayName} (${rune.shortBadge}) into ${relic.displayName} Socket #$socketNumber!"
+    }
+
+    private fun saveDaycareStateToStorage(state: DaycareBreedingState) {
+        runCatching {
+            val obj = JSONObject().apply {
+                put("parentOneId", state.parentOneId)
+                put("parentOneName", state.parentOneName)
+                put("parentOneSpeciesId", state.parentOneSpeciesId)
+                put("parentOneAttribute", state.parentOneAttribute)
+                put("parentOneShiny", state.parentOneShiny)
+                put("parentTwoId", state.parentTwoId)
+                put("parentTwoName", state.parentTwoName)
+                put("parentTwoSpeciesId", state.parentTwoSpeciesId)
+                put("parentTwoAttribute", state.parentTwoAttribute)
+                put("parentTwoShiny", state.parentTwoShiny)
+                put("hasActiveEgg", state.hasActiveEgg)
+                put("offspringSpeciesId", state.offspringSpeciesId)
+                put("offspringSpeciesName", state.offspringSpeciesName)
+                put("inheritedNatureCode", state.inheritedNatureCode)
+                put("inheritedBonusStats", state.inheritedBonusStats)
+                put("inheritedEggMove", state.inheritedEggMove)
+                put("chromaticShinyOddsPercent", state.chromaticShinyOddsPercent)
+                put("currentIncubationPoints", state.currentIncubationPoints)
+                put("targetIncubationPoints", state.targetIncubationPoints)
+                put("totalEggsHatched", state.totalEggsHatched)
+                put("totalShinyHatched", state.totalShinyHatched)
+            }
+            repository.saveLongPlayRpgJson(currentUserId, "daycare", obj.toString())
+        }
+    }
+
+    private fun saveFrontierStateToStorage(state: FrontierTowerState) {
+        runCatching {
+            val obj = JSONObject().apply {
+                put("currentFloor", state.currentFloor)
+                put("highestFloorReached", state.highestFloorReached)
+                put("currentWinStreak", state.currentWinStreak)
+                put("bestWinStreak", state.bestWinStreak)
+                put("battlePoints", state.battlePoints)
+                put("totalBossesDefeated", state.totalBossesDefeated)
+                put("shinyCharmUnlocked", state.shinyCharmUnlocked)
+            }
+            repository.saveLongPlayRpgJson(currentUserId, "frontier", obj.toString())
+        }
+    }
+
+    private fun saveQuestsStateToStorage(quests: List<TamerQuestItem>, pass: TamerPassState) {
+        runCatching {
+            val arr = JSONArray()
+            for (q in quests) {
+                arr.put(
+                    JSONObject().apply {
+                        put("questId", q.questId)
+                        put("currentProgress", q.currentProgress)
+                        put("isClaimed", q.isClaimed)
+                    }
+                )
+            }
+            repository.saveLongPlayRpgJson(currentUserId, "quests", arr.toString())
+            val passObj = JSONObject().apply {
+                put("totalPassXp", pass.totalPassXp)
+                put("claimedTiers", JSONArray(pass.claimedMilestoneTiers.toList()))
+            }
+            repository.saveLongPlayRpgJson(currentUserId, "pass", passObj.toString())
+        }
+    }
+
+    private fun saveRelicForgeToStorage(relicMap: Map<String, ForgedRelicUpgradeState>, runes: Set<String>) {
+        runCatching {
+            val arr = JSONArray()
+            for ((_, st) in relicMap) {
+                arr.put(
+                    JSONObject().apply {
+                        put("relicCode", st.relicCode)
+                        put("upgradeLevel", st.upgradeLevel)
+                        put("socketOneRuneCode", st.socketOneRuneCode ?: "")
+                        put("socketTwoRuneCode", st.socketTwoRuneCode ?: "")
+                    }
+                )
+            }
+            repository.saveLongPlayRpgJson(currentUserId, "relic_forge", arr.toString())
+            repository.saveLongPlayRpgJson(currentUserId, "runes", JSONArray(runes.toList()).toString())
+        }
+    }
+
+    private fun loadLongPlayRpgStateFromStorage() {
+        runCatching {
+            repository.loadLongPlayRpgJson(currentUserId, "daycare")?.let { raw ->
+                val obj = JSONObject(raw)
+                _daycareState.value = DaycareBreedingState(
+                    parentOneId = obj.optString("parentOneId"),
+                    parentOneName = obj.optString("parentOneName"),
+                    parentOneSpeciesId = obj.optString("parentOneSpeciesId"),
+                    parentOneAttribute = obj.optString("parentOneAttribute"),
+                    parentOneShiny = obj.optBoolean("parentOneShiny", false),
+                    parentTwoId = obj.optString("parentTwoId"),
+                    parentTwoName = obj.optString("parentTwoName"),
+                    parentTwoSpeciesId = obj.optString("parentTwoSpeciesId"),
+                    parentTwoAttribute = obj.optString("parentTwoAttribute"),
+                    parentTwoShiny = obj.optBoolean("parentTwoShiny", false),
+                    hasActiveEgg = obj.optBoolean("hasActiveEgg", false),
+                    offspringSpeciesId = obj.optString("offspringSpeciesId", "patamon"),
+                    offspringSpeciesName = obj.optString("offspringSpeciesName", "Sproutling"),
+                    inheritedNatureCode = obj.optString("inheritedNatureCode", "ADM"),
+                    inheritedBonusStats = obj.optInt("inheritedBonusStats", 18),
+                    inheritedEggMove = obj.optString("inheritedEggMove", "Starlight Resonance"),
+                    chromaticShinyOddsPercent = obj.optInt("chromaticShinyOddsPercent", 15),
+                    currentIncubationPoints = obj.optInt("currentIncubationPoints", 0),
+                    targetIncubationPoints = obj.optInt("targetIncubationPoints", 100),
+                    totalEggsHatched = obj.optInt("totalEggsHatched", 0),
+                    totalShinyHatched = obj.optInt("totalShinyHatched", 0)
+                )
+            }
+            repository.loadLongPlayRpgJson(currentUserId, "frontier")?.let { raw ->
+                val obj = JSONObject(raw)
+                _frontierTowerState.value = FrontierTowerState(
+                    currentFloor = obj.optInt("currentFloor", 1),
+                    highestFloorReached = obj.optInt("highestFloorReached", 1),
+                    currentWinStreak = obj.optInt("currentWinStreak", 0),
+                    bestWinStreak = obj.optInt("bestWinStreak", 0),
+                    battlePoints = obj.optInt("battlePoints", 25),
+                    totalBossesDefeated = obj.optInt("totalBossesDefeated", 0),
+                    shinyCharmUnlocked = obj.optBoolean("shinyCharmUnlocked", false)
+                )
+            }
+            repository.loadLongPlayRpgJson(currentUserId, "quests")?.let { raw ->
+                val arr = JSONArray(raw)
+                val progressById = mutableMapOf<String, Pair<Int, Boolean>>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    progressById[o.optString("questId")] =
+                        o.optInt("currentProgress", 0) to o.optBoolean("isClaimed", false)
+                }
+                _tamerQuests.value = LongPlayRpgCatalog.defaultTamerQuests().map { def ->
+                    val saved = progressById[def.questId]
+                    if (saved != null) def.copy(currentProgress = saved.first, isClaimed = saved.second) else def
+                }
+            }
+            repository.loadLongPlayRpgJson(currentUserId, "pass")?.let { raw ->
+                val obj = JSONObject(raw)
+                val tiersArr = obj.optJSONArray("claimedTiers")
+                val tiers = mutableSetOf<Int>()
+                if (tiersArr != null) {
+                    for (i in 0 until tiersArr.length()) tiers.add(tiersArr.optInt(i))
+                }
+                _tamerPassState.value = TamerPassState(
+                    totalPassXp = obj.optInt("totalPassXp", 0),
+                    claimedMilestoneTiers = tiers
+                )
+            }
+            repository.loadLongPlayRpgJson(currentUserId, "relic_forge")?.let { raw ->
+                val arr = JSONArray(raw)
+                val map = mutableMapOf<String, ForgedRelicUpgradeState>()
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val code = o.optString("relicCode")
+                    if (code.isNotBlank()) {
+                        map[code] = ForgedRelicUpgradeState(
+                            relicCode = code,
+                            upgradeLevel = o.optInt("upgradeLevel", 0).coerceIn(0, 5),
+                            socketOneRuneCode = o.optString("socketOneRuneCode").takeIf { it.isNotBlank() },
+                            socketTwoRuneCode = o.optString("socketTwoRuneCode").takeIf { it.isNotBlank() }
+                        )
+                    }
+                }
+                _forgedRelics.value = map
+            }
+            repository.loadLongPlayRpgJson(currentUserId, "runes")?.let { raw ->
+                val arr = JSONArray(raw)
+                val set = mutableSetOf<String>()
+                for (i in 0 until arr.length()) {
+                    val code = arr.optString(i)
+                    if (code.isNotBlank()) set.add(code)
+                }
+                if (set.isNotEmpty()) {
+                    _unlockedRuneCodes.value = set
+                }
+            }
+        }
     }
 
     private fun handleStreamException(streamName: String, error: Throwable) {

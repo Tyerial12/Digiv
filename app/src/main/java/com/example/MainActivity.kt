@@ -446,7 +446,7 @@ fun AuthenticatedHoloDashboard(
                         icon = { Icon(Icons.Default.Dashboard, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         label = {
                             Text(
-                                text = stringResource(R.string.nav_command_deck),
+                                text = "Sanctuary",
                                 style = MaterialTheme.typography.labelSmall,
                                 maxLines = 1,
                                 softWrap = false
@@ -466,7 +466,7 @@ fun AuthenticatedHoloDashboard(
                         icon = { Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         label = {
                             Text(
-                                text = "World",
+                                text = "World Map",
                                 style = MaterialTheme.typography.labelSmall,
                                 maxLines = 1,
                                 softWrap = false
@@ -486,7 +486,7 @@ fun AuthenticatedHoloDashboard(
                         icon = { Icon(Icons.Default.FitnessCenter, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         label = {
                             Text(
-                                text = stringResource(R.string.nav_training_drills),
+                                text = "Frontier",
                                 style = MaterialTheme.typography.labelSmall,
                                 maxLines = 1,
                                 softWrap = false
@@ -506,7 +506,7 @@ fun AuthenticatedHoloDashboard(
                         icon = { Icon(Icons.Default.Storefront, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         label = {
                             Text(
-                                text = stringResource(R.string.nav_store),
+                                text = "Forge",
                                 style = MaterialTheme.typography.labelSmall,
                                 maxLines = 1,
                                 softWrap = false
@@ -530,7 +530,7 @@ fun AuthenticatedHoloDashboard(
                         icon = { Icon(Icons.Default.EmojiEvents, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         label = {
                             Text(
-                                text = "Hub",
+                                text = "Guild Hub",
                                 style = MaterialTheme.typography.labelSmall,
                                 maxLines = 1,
                                 softWrap = false
@@ -669,6 +669,10 @@ fun AuthenticatedHoloDashboard(
                             onUnlockSkillNode = viewModel::unlockSkillNode,
                             onChangeNature = viewModel::changeCompanionNature,
                             onEquipRelic = viewModel::equipHeldRelic,
+                            onAssignDaycareParents = viewModel::assignDaycareParents,
+                            onNurtureDaycareEgg = viewModel::nurtureDaycareEgg,
+                            onHatchDaycareEgg = viewModel::hatchDaycareEgg,
+                            onDeployFromEmeraldReserve = viewModel::deployFromEmeraldReserve,
                             onOpenDrillsModal = { currentTab = DigiPulseTab.DRILLS }
                         )
                         DigiPulseTab.WORLD -> com.example.ui.screens.WildAndExpeditionsTabContent(
@@ -690,8 +694,8 @@ fun AuthenticatedHoloDashboard(
                             onBuyOrCraftAcornOrb = viewModel::buyOrCraftAcornOrb,
                             onDeployFromEmeraldReserve = viewModel::deployFromEmeraldReserve,
                             onBattleWildMonster = viewModel::battleWildMonster,
-                            onExecuteWildMove = viewModel::executeWildTacticalMove,
-                            onChallengeSanctumLeader = viewModel::challengeSanctumLeader,
+                            onExecuteWildMove = viewModel::executeTurnBasedMove,
+                            onChallengeSanctumLeader = viewModel::startSanctumLeaderTurnBasedBattle,
                             onSellStandardPart = viewModel::sellStandardMonsterParts,
                             onSellUltraRarePart = viewModel::sellUltraRareMonsterParts,
                             onSellAllParts = viewModel::sellAllMonsterParts,
@@ -701,17 +705,29 @@ fun AuthenticatedHoloDashboard(
                             onCompleteOrRecallExpedition = viewModel::completeOrRecallExpedition,
                             onOpenFeedSheet = { showFeedSheet = true },
                             onGoToStoreTab = { currentTab = DigiPulseTab.STORE },
-                            onTriggerCryoRest = viewModel::toggleRestMode
+                            onTriggerCryoRest = viewModel::toggleRestMode,
+                            rpgUiState = uiState,
+                            onSelectWorldRegion = viewModel::selectWorldRegion,
+                            onExecuteTurnBasedMove = viewModel::executeTurnBasedMove,
+                            onSwitchPartyCompanionMidBattle = viewModel::switchPartyCompanionMidBattle,
+                            onStartSanctumTurnBasedBattle = viewModel::startSanctumLeaderTurnBasedBattle,
+                            onStartFrontierFloorBattle = viewModel::startFrontierTowerFloorBattle
                         )
-                        DigiPulseTab.DRILLS -> DrillsHubTab(
-                            activeCreature = uiState.activeCreature,
-                            digiCoins = uiState.digiCoins,
-                            nextDigiCoinTickSec = uiState.nextDigiCoinTickSec,
+                        DigiPulseTab.DRILLS -> com.example.ui.screens.FrontierAndQuestsHubTab(
+                            uiState = uiState,
+                            onStartFrontierBattle = viewModel::startFrontierTowerFloorBattle,
+                            onRedeemBpItem = viewModel::redeemFrontierBpItem,
+                            onClaimQuest = viewModel::claimTamerQuestReward,
+                            onClaimPassMilestone = viewModel::claimTamerPassMilestone,
                             onCompleteDrill = { drill, score ->
                                 viewModel.completeTrainingDrill(drill, score)
                             },
                             onStart24hOfflineTraining = viewModel::start24hOfflineTraining,
-                            onTogglePauseOfflineTraining = viewModel::togglePauseOfflineTraining
+                            onTogglePauseOfflineTraining = viewModel::togglePauseOfflineTraining,
+                            onOpenBattleArenaInWorld = {
+                                wildExpeditionsInitialTab = 0
+                                currentTab = DigiPulseTab.WORLD
+                            }
                         )
                         DigiPulseTab.STORE -> StoreHubTab(
                             activeCreature = uiState.activeCreature,
@@ -734,7 +750,11 @@ fun AuthenticatedHoloDashboard(
                             onOpenWildTamingModal = {
                                 wildExpeditionsInitialTab = 0
                                 currentTab = DigiPulseTab.WORLD
-                            }
+                            },
+                            rpgUiState = uiState,
+                            onEquipRelic = viewModel::equipHeldRelic,
+                            onUpgradeRelic = viewModel::upgradeHeldRelicInForge,
+                            onCraftOrSocketRune = viewModel::craftOrSocketResonanceRune
                         )
                         DigiPulseTab.TRADE -> GlobalTradeExchangeTab(
                             currentUserId = currentUserId,

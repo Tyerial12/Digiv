@@ -183,6 +183,12 @@ fun WildAndExpeditionsTabContent(
     onOpenFeedSheet: () -> Unit,
     onGoToStoreTab: () -> Unit = {},
     onTriggerCryoRest: () -> Unit,
+    rpgUiState: com.example.viewmodel.DashboardUiState? = null,
+    onSelectWorldRegion: (String) -> Unit = {},
+    onExecuteTurnBasedMove: (Int) -> Unit = {},
+    onSwitchPartyCompanionMidBattle: (String) -> Unit = {},
+    onStartSanctumTurnBasedBattle: (com.example.data.model.SanctumLeaderSpec) -> Unit = {},
+    onStartFrontierFloorBattle: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var selectedSection by remember(initialTabIndex) { mutableIntStateOf(initialTabIndex) }
@@ -202,6 +208,20 @@ fun WildAndExpeditionsTabContent(
             .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
+            if (rpgUiState != null) {
+                VisualWorldMapAndTurnBasedArenaCard(
+                    uiState = rpgUiState,
+                    onSelectRegion = onSelectWorldRegion,
+                    onExecuteTurnMove = onExecuteTurnBasedMove,
+                    onSwitchPartyCompanion = onSwitchPartyCompanionMidBattle,
+                    onThrowAcornOrb = onThrowTammingBerry,
+                    onSelectAcornOrbType = onSelectAcornOrbType,
+                    onStartSanctumLeaderBattle = onStartSanctumTurnBasedBattle,
+                    onStartFrontierFloorBattle = onStartFrontierFloorBattle,
+                    onScanWildInRegion = { onScanWildMonster(null) }
+                )
+            }
+
             // Top Switcher: Emerald Safari (100), 16 Crest Routes (24h), & 16 Sanctum Leader Gym Battles
             Row(
                 modifier = Modifier.fillMaxWidth(),

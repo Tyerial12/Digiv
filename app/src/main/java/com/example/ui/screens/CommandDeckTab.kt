@@ -108,6 +108,10 @@ fun CommandDeckTab(
     onUnlockSkillNode: (com.example.data.model.MonsterSkillNode) -> Unit = {},
     onChangeNature: (com.example.data.model.CompanionNature) -> Unit = {},
     onEquipRelic: (com.example.data.model.HeldRelicItem) -> Unit = {},
+    onAssignDaycareParents: (String, String) -> Unit = { _, _ -> },
+    onNurtureDaycareEgg: () -> Unit = {},
+    onHatchDaycareEgg: () -> Unit = {},
+    onDeployFromEmeraldReserve: (com.example.data.model.EmeraldReserveEntry) -> Unit = {},
     onOpenDrillsModal: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -212,6 +216,15 @@ fun CommandDeckTab(
                         onOpenSkillTreeModal = { selectedDeckSubTab = 2 },
                         onChangeNature = onChangeNature,
                         onEquipRelic = onEquipRelic
+                    )
+
+                    // Long-Play RPG Sanctuary Daycare Breeding & Shiny Nursery
+                    SanctuaryDaycareNurseryCard(
+                        uiState = uiState,
+                        onAssignParents = onAssignDaycareParents,
+                        onNurtureEgg = onNurtureDaycareEgg,
+                        onHatchEgg = onHatchDaycareEgg,
+                        onDeployFromReserve = onDeployFromEmeraldReserve
                     )
 
                     Text(
